@@ -97,13 +97,13 @@
   #msg .big.huge { font-size: 72px; }
   #msg .small { color: var(--text); font-size: 15px; opacity: .85; text-shadow: 0 1px 6px rgba(0,0,0,.7); }
 
-  #pad { display: none; grid-template-columns: repeat(3, 64px); grid-template-rows: repeat(2, 54px); gap: 8px; }
-  #pad button { font-size: 22px; touch-action: none; padding: 0; }
-  #pad .up { grid-column: 2; grid-row: 1; }
-  #pad .left { grid-column: 1; grid-row: 2; }
-  #pad .down { grid-column: 2; grid-row: 2; }
-  #pad .right { grid-column: 3; grid-row: 2; }
-  @media (pointer: coarse) { #pad { display: grid; } }
+  /* on-screen buttons, laid out by each game (touch devices only) */
+  #pad { display: none; gap: 8px; grid-auto-rows: 54px; }
+  #pad button { font-size: 22px; touch-action: none; padding: 0; user-select: none; -webkit-user-select: none; }
+  #pad button.held { background: var(--btn-on); }
+  #pad button small { display: block; font-size: 10px; color: var(--muted); }
+  @media (pointer: coarse) { #pad { display: grid; } #keysHelp { display: none; } }
+  #keysHelp { text-align: center; }
   #status { font-size: 12px; color: var(--muted); min-height: 16px; }
   #status.bad { color: var(--err); }
 
@@ -193,12 +193,8 @@
       <canvas id="board"></canvas>
       <div id="msg" class="hidden"><div class="big" id="msgBig"></div><div class="small" id="msgSmall"></div></div>
     </div>
-    <div id="pad">
-      <button class="up" data-dir="up" aria-label="Up">&#9650;</button>
-      <button class="left" data-dir="left" aria-label="Left">&#9664;</button>
-      <button class="down" data-dir="down" aria-label="Down">&#9660;</button>
-      <button class="right" data-dir="right" aria-label="Right">&#9654;</button>
-    </div>
+    <div id="pad"></div>
+    <div id="keysHelp" class="hint"></div>
   </section>
 
   <div id="status">Connecting…</div>
@@ -330,7 +326,7 @@
 
   // what game modules get to work with
   const api = {
-    $, canvas, ctx, color, esc, fmtTime, play,
+    $, canvas, ctx, color, esc, fmtTime, play, tone, sfx: SFX,
     st: () => st, me: () => me,
     setMessage(big, small, huge, dim) {
       $("msg").classList.toggle("hidden", !big && big !== 0);
@@ -397,6 +393,11 @@
   function myName() { return $("inName").value.trim(); }
 
   function handle(msg) {
+    if (msg.type === "hello") {
+      catalog = msg.games;
+      fillGameSelect($("inGame"), $("inGame").value === "snake" ? (store.get("room.game") || "snake") : $("inGame").value);
+      return;
+    }
     if (msg.type === "joined") {
       me = msg.you; code = msg.code;
       $("homeErr").textContent = "";
@@ -438,9 +439,10 @@
     $("roomChip").classList.toggle("hidden", s === "home");
     if (s !== "home" && st) { $("chipCode").textContent = st.code; $("chipGame").textContent = st.game_name; }
     if (s === "lobby") renderLobby();
+    if (s !== "game") releaseAll();
     if (s === "game") {
       const mod = gameModule(st.game_id);
-      if (mod) mod.render(api);
+      if (mod) { setupControls(st.game_id, mod); mod.render(api); }
       $("btnExit").classList.toggle("hidden", st.state !== "match");
     }
     renderAdmit();
@@ -597,39 +599,103 @@
   $("modal").addEventListener("click", e => { if (e.target.id === "modal") closeModal(); });
 
   // ---------------------------------------------------------- input
-  const turn = dir => send({ type: "input", dir });
-  const KEYS = {
-    ArrowUp: "up", ArrowDown: "down", ArrowLeft: "left", ArrowRight: "right",
-    w: "up", s: "down", a: "left", d: "right", W: "up", S: "down", A: "left", D: "right",
-  };
+  // Each game declares its controls (see static/games/*.js):
+  //   hold: false  -> a key press sends {dir: <name>}            (Snake: tap to turn)
+  //   hold: true   -> press/release send {key: <name>, down: bool} (Space Wars: hold to thrust)
+  //   keys: keyboard key -> control name;  pad: on-screen buttons for touch screens
+  //   swipe: true  -> swiping on the board sends directions
+  let controls = { keys: {}, pad: { buttons: [] } };
+  let controlsFor = null;
+  const held = new Set();
+  const pointers = new Map();     // pointerId -> button, so several fingers work at once
+
+  function setupControls(id, mod) {
+    if (controlsFor === id) return;
+    controlsFor = id;
+    releaseAll();
+    controls = Object.assign({ keys: {}, pad: { buttons: [] } }, mod.controls || {});
+    const pad = controls.pad;
+    $("pad").style.gridTemplateColumns = pad.cols || "";
+    $("pad").innerHTML = pad.buttons.map(b => `
+      <button data-key="${esc(b.key)}" aria-label="${esc(b.name || b.key)}"
+        style="grid-column:${b.col}${b.span ? ` / span ${b.span}` : ""};grid-row:${b.row}">
+        ${b.label}${b.sub ? `<small>${esc(b.sub)}</small>` : ""}</button>`).join("");
+    $("keysHelp").textContent = controls.help || "";
+  }
+
+  function press(key) {
+    if (controls.hold) {
+      if (held.has(key)) return;
+      held.add(key);
+      send({ type: "input", key, down: true });
+    } else {
+      send({ type: "input", dir: key });
+    }
+  }
+  function release(key) {
+    if (controls.hold && held.delete(key)) send({ type: "input", key, down: false });
+  }
+  function releaseAll() {
+    for (const k of [...held]) release(k);
+    pointers.clear();
+    document.querySelectorAll("#pad button.held").forEach(b => b.classList.remove("held"));
+  }
+  const keyName = e => (e.key.length === 1 ? e.key.toLowerCase() : e.key);
+
   window.addEventListener("keydown", e => {
     if (modalOpen()) { if (e.key === "Escape") closeModal(); return; }
     if (e.target.tagName === "INPUT" || e.target.tagName === "SELECT") return;
-    if (e.key === "Escape" && screen() === "game" && st.state === "match") { openModal(); return; }
-    if (screen() === "game" && KEYS[e.key]) { e.preventDefault(); turn(KEYS[e.key]); }
-    else if ((e.key === " " || e.key === "Enter") && screen() === "lobby" && st.host === me && st.state === "lobby") {
+    if (e.key === "Escape" && screen() === "game" && st.state === "match") { releaseAll(); openModal(); return; }
+    const ctl = controls.keys[keyName(e)];
+    if (screen() === "game" && ctl) {
+      e.preventDefault();
+      if (!(controls.hold && e.repeat)) press(ctl);
+    } else if ((e.key === " " || e.key === "Enter") && screen() === "lobby" && st.host === me && st.state === "lobby") {
       e.preventDefault(); send({ type: "start" });
     }
   });
+  window.addEventListener("keyup", e => {
+    const ctl = controls.keys[keyName(e)];
+    if (ctl) release(ctl);
+  });
+  window.addEventListener("blur", releaseAll);
 
-  // swipe: fires as soon as the finger has moved far enough
+  // on-screen buttons
+  $("pad").addEventListener("pointerdown", e => {
+    const b = e.target.closest("button");
+    if (!b) return;
+    e.preventDefault();
+    pointers.set(e.pointerId, b);
+    b.classList.add("held");
+    press(b.dataset.key);
+    if (!controls.hold) setTimeout(() => b.classList.remove("held"), 120);
+  });
+  const lift = e => {
+    const b = pointers.get(e.pointerId);
+    if (!b) return;
+    pointers.delete(e.pointerId);
+    b.classList.remove("held");
+    if (![...pointers.values()].includes(b)) release(b.dataset.key);
+  };
+  window.addEventListener("pointerup", lift);
+  window.addEventListener("pointercancel", lift);
+  $("pad").addEventListener("contextmenu", e => e.preventDefault());
+
+  // swipe on the board (games that ask for it): fires as soon as the finger has moved far enough
   const wrap = $("wrap");
   let sx = 0, sy = 0, tracking = false;
   wrap.addEventListener("touchstart", e => {
-    const t = e.touches[0]; sx = t.clientX; sy = t.clientY; tracking = true;
+    const t = e.touches[0]; sx = t.clientX; sy = t.clientY; tracking = !!controls.swipe;
   }, { passive: true });
   wrap.addEventListener("touchmove", e => {
     if (!tracking) return;
     e.preventDefault();
     const t = e.touches[0], dx = t.clientX - sx, dy = t.clientY - sy;
     if (Math.max(Math.abs(dx), Math.abs(dy)) < 24) return;
-    turn(Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? "right" : "left") : (dy > 0 ? "down" : "up"));
+    press(Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? "right" : "left") : (dy > 0 ? "down" : "up"));
     sx = t.clientX; sy = t.clientY;
   }, { passive: false });
   wrap.addEventListener("touchend", () => { tracking = false; });
-  document.querySelectorAll("#pad button").forEach(b => {
-    b.addEventListener("pointerdown", e => { e.preventDefault(); turn(b.dataset.dir); });
-  });
 
   window.addEventListener("resize", () => {
     for (const m of Object.values(window.GAMES || {})) if (m.onResize) m.onResize();

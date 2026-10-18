@@ -161,5 +161,23 @@
   }
 
   window.GAMES = window.GAMES || {};
-  window.GAMES.snake = { render, sounds, liveInfo, status, onResize() { sizedFor = ""; } };
+  // tap to turn: arrow keys / WASD, swipe on the board, or the d-pad on touch screens
+  const controls = {
+    hold: false,
+    swipe: true,
+    keys: { ArrowUp: "up", ArrowDown: "down", ArrowLeft: "left", ArrowRight: "right",
+            w: "up", s: "down", a: "left", d: "right" },
+    pad: {
+      cols: "repeat(3, 64px)",
+      buttons: [
+        { key: "up", label: "&#9650;", col: 2, row: 1 },
+        { key: "left", label: "&#9664;", col: 1, row: 2 },
+        { key: "down", label: "&#9660;", col: 2, row: 2 },
+        { key: "right", label: "&#9654;", col: 3, row: 2 },
+      ],
+    },
+    help: "Arrow keys or WASD to steer · Esc to exit",
+  };
+
+  window.GAMES.snake = { render, sounds, liveInfo, status, controls, onResize() { sizedFor = ""; } };
 })();

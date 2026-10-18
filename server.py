@@ -219,6 +219,7 @@ async def ws_handler(request):
     await ws.prepare(request)
     room = None
     me = None
+    await ws.send_json({"type": "hello", "games": CATALOG})   # game list for the home screen
 
     async def error(text):
         await ws.send_json({"type": "error", "msg": text})
