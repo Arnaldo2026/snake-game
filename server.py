@@ -9,7 +9,9 @@ The host (whoever created the room) chooses before each match:
   - mode "rounds":  last snake standing wins; dead snakes wait for the next round
   - mode "endless": timed free-for-all; dead snakes respawn after 3 s,
                     highest score when time runs out wins
-  - duration (free-for-all only) and speed
+  - duration (free-for-all only), speed and arena size
+
+A player can quit the current match (they stay in the room for the next one).
 
 Run:   python server.py
 Open:  http://localhost:8000          (on this PC)
@@ -32,9 +34,10 @@ from pathlib import Path
 from aiohttp import WSMsgType, web
 
 # ---------------------------------------------------------------- settings
-GRID = int(os.environ.get("SNAKE_GRID", 24))
-BASE_TICK = float(os.environ.get("SNAKE_TICK", 0.14))   # seconds per move, "normal"
+BASE_TICK = 0.14                                         # seconds per move, "normal"
 SPEEDS = {"slow": 1.3, "normal": 1.0, "fast": 0.75}      # multipliers on BASE_TICK
+SIZES = {"small": 20, "medium": 28, "large": 36, "huge": 44}   # square arena, cells per side
+CELLS_PER_FOOD = 200                                     # bigger arenas get more food
 DURATIONS = (60, 120, 180)                               # free-for-all, seconds
 MAX_PLAYERS = 4
 COUNTDOWN = 3.0
@@ -64,6 +67,7 @@ class Player:
         self.pending = []          # buffered turns (max 2)
         self.alive = False
         self.in_round = False      # took part in the current match from the start
+        self.quit = False          # left the current match, waits for the next one
         self.score = 0
         self.wins = 0
         self.respawn_at = None
@@ -87,8 +91,9 @@ class Room:
         self.mode = "rounds"
         self.duration = 120
         self.speed = "normal"
+        self.size = "medium"
         self.state = "lobby"       # lobby | countdown | playing
-        self.w = self.h = GRID
+        self.w = self.h = SIZES[self.size]
         self.food = []
         self.countdown_end = 0.0
         self.end_time = 0.0
@@ -130,7 +135,7 @@ class Room:
         return cells
 
     def place_food(self):
-        target = max(1, len(self.players))
+        target = max(1, len(self.players), round(self.w * self.h / CELLS_PER_FOOD))
         if len(self.food) >= target:
             return
         taken = self.occupied() | set(self.food)
@@ -167,8 +172,10 @@ class Room:
     def start_match(self):
         self.results = None
         self.food = []
+        self.w = self.h = SIZES[self.size]
         for i, p in enumerate(self.players.values()):
             p.score = 0
+            p.quit = False
             p.pending = []
             p.respawn_at = None
             p.in_round = True
@@ -183,13 +190,25 @@ class Room:
         p.alive = False
         p.body = []
         p.pending = []
-        if self.mode == "endless":
+        if self.mode == "endless" and not p.quit:
             p.respawn_at = now + RESPAWN
+
+    def quit_match(self, p):
+        if self.state not in ("countdown", "playing") or p.quit:
+            return
+        p.quit = True
+        p.alive = False
+        p.body = []
+        p.pending = []
+        p.respawn_at = None
+        if self.state == "playing":
+            self.check_end(time.monotonic())
+        self.dirty = True
 
     def step(self, now):
         if self.mode == "endless":
             for p in self.players.values():
-                if not p.alive and p.respawn_at and now >= p.respawn_at:
+                if not p.alive and not p.quit and p.respawn_at and now >= p.respawn_at:
                     if self.spawn_random(p):
                         p.alive, p.respawn_at, p.pending = True, None, []
 
@@ -296,6 +315,7 @@ class Room:
             "mode": self.mode,
             "duration": self.duration,
             "speed": self.speed,
+            "size": self.size,
             "host": self.host,
             "w": self.w,
             "h": self.h,
@@ -307,7 +327,7 @@ class Room:
             "players": [{
                 "id": p.id, "name": p.name, "color": p.color,
                 "score": p.score, "wins": p.wins,
-                "alive": p.alive, "in_round": p.in_round,
+                "alive": p.alive, "in_round": p.in_round, "quit": p.quit,
                 "body": p.body, "dir": p.dir,
                 "respawn": round(max(0.0, p.respawn_at - now), 1) if p.respawn_at else None,
             } for p in self.players.values()],
@@ -407,6 +427,8 @@ async def ws_handler(request):
 
             if kind == "dir":
                 me.queue(data.get("dir"))
+            elif kind == "quit":
+                room.quit_match(me)
             elif kind == "leave":
                 break
             elif me.id == room.host and room.state == "lobby":
@@ -417,6 +439,9 @@ async def ws_handler(request):
                         room.duration = data["duration"]
                     if data.get("speed") in SPEEDS:
                         room.speed = data["speed"]
+                    if data.get("size") in SIZES:
+                        room.size = data["size"]
+                        room.w = room.h = SIZES[room.size]
                     room.dirty = True
                 elif kind == "start":
                     room.start_match()

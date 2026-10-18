@@ -29,8 +29,9 @@
   }
   body { display: flex; flex-direction: column; align-items: center; padding: 10px 16px 16px; gap: 10px; }
   .hidden { display: none !important; }
-  header { width: 100%; max-width: 520px; display: flex; justify-content: space-between; align-items: center; }
-  h1 { margin: 0; font-size: 20px; letter-spacing: .5px; }
+  header { width: 100%; max-width: 960px; display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+  h1 { margin: 0; font-size: 20px; letter-spacing: .5px; flex: 1; }
+  #btnSound { background: none; font-size: 20px; padding: 4px 6px; line-height: 1; }
   #roomChip { font-size: 13px; color: var(--muted); }
   #roomChip b { color: var(--text); letter-spacing: 2px; }
 
@@ -71,14 +72,25 @@
   #results .title { font-size: 18px; font-weight: 700; }
 
   #game { display: flex; flex-direction: column; align-items: center; gap: 8px; width: 100%; }
-  #hud { width: 100%; max-width: 520px; display: flex; justify-content: space-between; align-items: center; gap: 8px; min-height: 30px; }
+  #hud { width: 100%; max-width: 960px; display: flex; justify-content: space-between; align-items: center; gap: 8px; min-height: 30px; }
   #chips { display: flex; flex-wrap: wrap; gap: 6px; }
   .chip { display: flex; align-items: center; gap: 6px; background: var(--card); border-radius: 999px;
           padding: 4px 10px 4px 6px; font-size: 13px; }
   .chip.dead { opacity: .4; }
   .chip.me { outline: 1px solid var(--muted); }
   .chip b { font-variant-numeric: tabular-nums; }
+  #hudRight { display: flex; align-items: center; gap: 10px; flex: none; }
   #timer { font-variant-numeric: tabular-nums; font-weight: 700; font-size: 16px; white-space: nowrap; }
+  #btnExit { padding: 6px 12px; font-size: 14px; }
+  #lbLive { background: var(--bg); border-left: 3px solid var(--accent); border-radius: 8px; padding: 10px 12px;
+            font-size: 14px; line-height: 1.4; }
+
+  #modal { position: fixed; inset: 0; background: rgba(0, 0, 0, .6); display: flex; align-items: center;
+           justify-content: center; padding: 16px; z-index: 10; }
+  #modal .card { max-width: 340px; }
+  #modal .title { font-size: 18px; font-weight: 700; }
+  #modal .row button { flex: 1; }
+  button.danger { background: #dc2626; color: #fff; font-weight: 700; }
 
   #wrap { position: relative; touch-action: none; user-select: none; -webkit-user-select: none; }
   canvas { display: block; border-radius: 10px; background: var(--board); }
@@ -104,6 +116,7 @@
   <header>
     <h1>Snake</h1>
     <div id="roomChip" class="hidden">Room <b id="chipCode"></b></div>
+    <button id="btnSound" title="Sound on/off" aria-label="Sound on/off">🔊</button>
   </header>
 
   <!-- ============ HOME ============ -->
@@ -134,6 +147,8 @@
       <button id="btnCopy">Copy</button>
       <button id="btnShare" class="hidden">Share</button>
     </div>
+
+    <div id="lbLive" class="hidden"></div>
 
     <div id="results" class="hidden">
       <div class="title" id="resTitle"></div>
@@ -166,6 +181,15 @@
       <button data-val="fast">Fast</button>
     </div>
 
+    <div class="label">Arena</div>
+    <div class="seg" data-set="size">
+      <button data-val="small">Small</button>
+      <button data-val="medium">Medium</button>
+      <button data-val="large">Large</button>
+      <button data-val="huge">Huge</button>
+    </div>
+    <div class="hint" id="sizeHint"></div>
+
     <button id="btnStart" class="primary">Start</button>
     <div id="lbWait" class="hint" style="text-align:center"></div>
     <button id="btnLeave" class="link">Leave room</button>
@@ -173,7 +197,10 @@
 
   <!-- ============ GAME ============ -->
   <section id="game" class="hidden">
-    <div id="hud"><div id="chips"></div><div id="timer"></div></div>
+    <div id="hud">
+      <div id="chips"></div>
+      <div id="hudRight"><div id="timer"></div><button id="btnExit">Exit</button></div>
+    </div>
     <div id="wrap">
       <canvas id="board"></canvas>
       <div id="msg" class="hidden"><div class="big" id="msgBig"></div><div class="small" id="msgSmall"></div></div>
@@ -187,6 +214,17 @@
   </section>
 
   <div id="status">Connecting…</div>
+
+  <div id="modal" class="hidden">
+    <div class="card" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+      <div class="title" id="modalTitle">Exit this match?</div>
+      <div class="hint">You'll be out of this match and wait in the room for the next one.</div>
+      <div class="row">
+        <button id="btnNo">Keep playing</button>
+        <button id="btnYes" class="danger">Exit</button>
+      </div>
+    </div>
+  </div>
 
 <script>
 (() => {
@@ -207,6 +245,7 @@
   let st = null;          // latest room state from the server
   let holdUntil = 0;      // keep the board visible briefly after a match ends
   let qrFor = null;
+  const fmtTime = t => `${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")}`;
 
   // ---------------------------------------------------------- storage
   const store = {
@@ -214,6 +253,76 @@
     set(k, v) { try { localStorage.setItem(k, v); } catch (e) {} },
   };
   $("inName").value = store.get("snake.name") || "";
+
+  // ---------------------------------------------------------- sound
+  // generated with the Web Audio API, so there are no audio files to load
+  let actx = null;
+  let soundOn = store.get("snake.sound") !== "off";
+  function audio() {
+    if (!actx) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return null;
+      actx = new AC();
+    }
+    if (actx.state === "suspended") actx.resume();
+    return actx;
+  }
+  // browsers only allow audio after a tap or key press
+  ["pointerdown", "keydown", "touchstart"].forEach(ev =>
+    window.addEventListener(ev, () => { if (soundOn) audio(); }, { passive: true }));
+
+  function tone(freq, start, dur, type, vol, endFreq) {
+    const a = audio();
+    if (!a) return;
+    const t = a.currentTime + start;
+    const o = a.createOscillator(), g = a.createGain();
+    o.type = type;
+    o.frequency.setValueAtTime(freq, t);
+    if (endFreq) o.frequency.exponentialRampToValueAtTime(endFreq, t + dur);
+    g.gain.setValueAtTime(vol, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g).connect(a.destination);
+    o.start(t);
+    o.stop(t + dur + 0.02);
+  }
+  const SFX = {
+    eat()   { tone(660, 0, .07, "square", .05); tone(990, .06, .09, "square", .05); },
+    crash() { tone(320, 0, .5, "sawtooth", .08, 55); },
+    win()   { [523, 659, 784, 1047].forEach((f, i) => tone(f, i * .12, i === 3 ? .45 : .14, "triangle", .12)); },
+    end()   { tone(440, 0, .18, "triangle", .1); tone(330, .18, .32, "triangle", .1); },
+    tick()  { tone(880, 0, .08, "sine", .08); },
+    go()    { tone(1320, 0, .25, "sine", .1); },
+  };
+  function play(name, delay) {
+    if (!soundOn) return;
+    if (delay) setTimeout(() => SFX[name](), delay); else SFX[name]();
+  }
+  function paintSound() { $("btnSound").textContent = soundOn ? "🔊" : "🔇"; }
+  $("btnSound").onclick = () => {
+    soundOn = !soundOn;
+    store.set("snake.sound", soundOn ? "on" : "off");
+    paintSound();
+    if (soundOn) play("eat");
+  };
+  paintSound();
+
+  function sounds(prev, next) {
+    if (!me || !prev) return;
+    const was = prev.players.find(p => p.id === me);
+    const now = next.players.find(p => p.id === me);
+    let crashed = false;
+    if (was && now && prev.state === "playing") {
+      if (now.score > was.score) play("eat");
+      if (was.alive && !now.alive && !now.quit) { play("crash"); crashed = true; }
+    }
+    if (now && !now.quit) {
+      if (next.state === "countdown" && next.countdown !== prev.countdown) play("tick");
+      if (prev.state === "countdown" && next.state === "playing") play("go");
+    }
+    if (prev.state !== "lobby" && next.state === "lobby" && next.results) {
+      play(next.results.winner === me ? "win" : "end", crashed ? 550 : 0);
+    }
+  }
   const urlRoom = new URLSearchParams(location.search).get("room");
   if (urlRoom) $("inCode").value = urlRoom.toUpperCase().slice(0, 4);
 
@@ -250,7 +359,9 @@
         holdUntil = Date.now() + 2200;
         setTimeout(update, 2250);
       }
+      sounds(st, msg);
       st = msg;
+      if (st.state === "lobby") closeModal();
     }
     update();
   }
@@ -258,7 +369,9 @@
   // ---------------------------------------------------------- screens
   function screen() {
     if (!me || !st) return "home";
-    if (st.state === "lobby" && Date.now() >= holdUntil) return "lobby";
+    if (st.state === "lobby") return Date.now() >= holdUntil ? "lobby" : "game";
+    const mine = st.players.find(p => p.id === me);
+    if (mine && mine.quit) return "lobby";      // left the match: wait in the room
     return "game";
   }
 
@@ -278,6 +391,17 @@
 
   function renderLobby() {
     const isHost = st.host === me;
+    const live = st.state !== "lobby";          // a match is running without me
+    const canEdit = isHost && !live;
+
+    $("lbLive").classList.toggle("hidden", !live);
+    if (live) {
+      const playing = st.players.filter(p => !p.quit && (st.mode === "endless" || p.in_round));
+      const info = st.state === "countdown" ? "starting"
+        : st.mode === "endless" ? `${fmtTime(st.time_left || 0)} left`
+        : `${playing.filter(p => p.alive).length} still alive`;
+      $("lbLive").innerHTML = `<b>Match in progress</b> – ${info}.<br>You'll play in the next one.`;
+    }
     $("lbCode").textContent = st.code;
     $("lbLink").value = shareLink();
     $("btnShare").classList.toggle("hidden", !navigator.share);
@@ -301,27 +425,34 @@
 
     // players
     $("lbCount").textContent = `(${st.players.length}/${st.max})`;
+    const status = p => !live ? ""
+      : p.quit ? "left match"
+      : p.alive ? "playing"
+      : (st.mode === "endless" && p.respawn != null) ? "respawning" : "out";
     $("lbPlayers").innerHTML = st.players.map(p => `
       <li><span class="dot" style="background:${p.color}"></span>
           <span class="name">${esc(p.name)}${p.id === me ? ' <span class="tag">(you)</span>' : ""}</span>
+          ${live ? `<span class="tag">${status(p)}</span>` : ""}
           ${p.id === st.host ? '<span class="tag">host</span>' : ""}
           ${p.wins ? `<span class="tag">${p.wins} win${p.wins > 1 ? "s" : ""}</span>` : ""}</li>`).join("");
 
     // settings
-    const cur = { mode: st.mode, duration: String(st.duration), speed: st.speed };
+    const cur = { mode: st.mode, duration: String(st.duration), speed: st.speed, size: st.size };
     document.querySelectorAll(".seg").forEach(seg => {
       seg.querySelectorAll("button").forEach(b => {
         b.classList.toggle("on", b.dataset.val === cur[seg.dataset.set]);
-        b.disabled = !isHost;
+        b.disabled = !canEdit;
       });
     });
     $("modeHint").textContent = MODE_HINT[st.mode];
     $("durBox").classList.toggle("hidden", st.mode !== "endless");
+    $("sizeHint").textContent = `${st.w} × ${st.h} cells` +
+      (st.size === "huge" ? " – very small cells on phones" : st.size === "small" ? " – best for 1–2 players" : "");
 
-    $("btnStart").classList.toggle("hidden", !isHost);
+    $("btnStart").classList.toggle("hidden", !isHost || live);
     $("btnStart").textContent = st.results ? "Play again" : "Start";
-    $("lbWait").textContent = isHost
-      ? (st.players.length < 2 ? "You can start alone to try it, or wait for friends to join." : "")
+    $("lbWait").textContent = live ? ""
+      : isHost ? (st.players.length < 2 ? "You can start alone to try it, or wait for friends to join." : "")
       : "Waiting for the host to start…";
   }
 
@@ -329,7 +460,7 @@
     seg.addEventListener("click", e => {
       const b = e.target.closest("button");
       if (!b || b.disabled || !st) return;
-      const settings = { type: "settings", mode: st.mode, duration: st.duration, speed: st.speed };
+      const settings = { type: "settings", mode: st.mode, duration: st.duration, speed: st.speed, size: st.size };
       settings[seg.dataset.set] = seg.dataset.set === "duration" ? Number(b.dataset.val) : b.dataset.val;
       send(settings);
     });
@@ -364,19 +495,30 @@
     $("btnCopy").textContent = "Copied";
     setTimeout(() => { $("btnCopy").textContent = "Copy"; }, 1500);
   };
+  // exit the current match, with confirmation
+  function openModal() { $("modal").classList.remove("hidden"); $("btnNo").focus(); }
+  function closeModal() { $("modal").classList.add("hidden"); }
+  const modalOpen = () => !$("modal").classList.contains("hidden");
+  $("btnExit").onclick = openModal;
+  $("btnNo").onclick = closeModal;
+  $("btnYes").onclick = () => { closeModal(); send({ type: "quit" }); };
+  $("modal").addEventListener("click", e => { if (e.target.id === "modal") closeModal(); });
+
   $("btnShare").onclick = () => {
     navigator.share({ title: "Snake", text: `Join my Snake room ${st.code}`, url: shareLink() }).catch(() => {});
   };
 
   // ---------------------------------------------------------- game drawing
-  let cell = 20;
+  let cell = 20, sizedFor = "";
   function resize() {
     if (!st) return;
     const padH = matchMedia("(pointer: coarse)").matches ? 135 : 0;
-    const availW = Math.min(window.innerWidth - 32, 520);
-    const availH = window.innerHeight - 120 - padH;
+    const availW = Math.min(window.innerWidth - 32, 960);
+    const availH = window.innerHeight - 115 - padH;
     const c = Math.max(8, Math.floor(Math.min(availW / st.w, availH / st.h)));
-    if (c === cell && canvas.width) return;
+    const key = `${c}:${st.w}:${st.h}`;
+    if (key === sizedFor) return;
+    sizedFor = key;
     cell = c;
     const dpr = window.devicePixelRatio || 1;
     canvas.style.width = cell * st.w + "px";
@@ -455,9 +597,9 @@
       return `<span class="chip${out ? " dead" : ""}${p.id === me ? " me" : ""}">
         <span class="dot" style="background:${p.color}"></span>${esc(p.name)} <b>${p.score}</b></span>`;
     }).join("");
+    $("btnExit").classList.toggle("hidden", st.state === "lobby");
     if (st.mode === "endless" && st.time_left != null) {
-      const t = st.time_left;
-      $("timer").textContent = `${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")}`;
+      $("timer").textContent = fmtTime(st.time_left);
     } else if (st.mode === "rounds" && st.state === "playing") {
       const inRound = st.players.filter(p => p.in_round);
       $("timer").textContent = inRound.length > 1 ? `${inRound.filter(p => p.alive).length}/${inRound.length} alive` : "";
@@ -497,7 +639,9 @@
     w: "up", s: "down", a: "left", d: "right", W: "up", S: "down", A: "left", D: "right",
   };
   window.addEventListener("keydown", e => {
+    if (modalOpen()) { if (e.key === "Escape") closeModal(); return; }
     if (e.target.tagName === "INPUT") return;
+    if (e.key === "Escape" && screen() === "game" && st.state !== "lobby") { openModal(); return; }
     if (screen() === "game" && KEYS[e.key]) { e.preventDefault(); turn(KEYS[e.key]); }
     else if ((e.key === " " || e.key === "Enter") && screen() === "lobby" && st.host === me) {
       e.preventDefault(); send({ type: "start" });
@@ -523,7 +667,7 @@
     b.addEventListener("pointerdown", e => { e.preventDefault(); turn(b.dataset.dir); });
   });
 
-  window.addEventListener("resize", () => { cell = 0; update(); });
+  window.addEventListener("resize", () => { sizedFor = ""; update(); });
   window.addEventListener("load", () => { if (screen() === "lobby") { qrFor = null; renderLobby(); } });
   connect();
   update();
