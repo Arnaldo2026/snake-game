@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <meta name="theme-color" content="#10141a">
-<title>Snake</title>
+<title>Game Room</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <style>
   :root {
@@ -41,14 +41,16 @@
   .hint { font-size: 13px; color: var(--muted); line-height: 1.4; }
   .err { font-size: 14px; color: var(--err); min-height: 18px; }
   .row { display: flex; gap: 8px; }
-  input { flex: 1; min-width: 0; background: var(--bg); color: var(--text); border: 1px solid var(--line);
-          border-radius: 10px; padding: 11px 12px; font-size: 16px; }
-  input:focus { outline: 2px solid var(--btn-on); border-color: transparent; }
+  input, select { flex: 1; min-width: 0; background: var(--bg); color: var(--text); border: 1px solid var(--line);
+          border-radius: 10px; padding: 11px 12px; font-size: 16px; font-family: inherit; }
+  select:disabled { opacity: .7; }
+  input:focus, select:focus { outline: 2px solid var(--btn-on); border-color: transparent; }
   button { font: inherit; border: 0; border-radius: 10px; padding: 11px 14px; background: var(--btn);
            color: var(--text); cursor: pointer; }
   button:disabled { cursor: default; opacity: .55; }
   button.primary { background: var(--accent); color: #062411; font-weight: 700; font-size: 16px; padding: 13px; }
   button.link { background: none; color: var(--muted); text-decoration: underline; padding: 6px; }
+  button.danger { background: #dc2626; color: #fff; font-weight: 700; }
   .or { text-align: center; color: var(--muted); font-size: 13px; }
 
   .roomrow { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
@@ -67,9 +69,12 @@
   .seg { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 6px; }
   .seg button { padding: 10px 6px; font-size: 14px; }
   .seg button.on { background: var(--btn-on); outline: 2px solid var(--accent); outline-offset: -2px; }
+  #lbSettings { display: flex; flex-direction: column; gap: 10px; }
 
   #results { background: var(--bg); border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
   #results .title { font-size: 18px; font-weight: 700; }
+  #lbLive { background: var(--bg); border-left: 3px solid var(--accent); border-radius: 8px; padding: 10px 12px;
+            font-size: 14px; line-height: 1.4; }
 
   #game { display: flex; flex-direction: column; align-items: center; gap: 8px; width: 100%; }
   #hud { width: 100%; max-width: 960px; display: flex; justify-content: space-between; align-items: center; gap: 8px; min-height: 30px; }
@@ -82,15 +87,6 @@
   #hudRight { display: flex; align-items: center; gap: 10px; flex: none; }
   #timer { font-variant-numeric: tabular-nums; font-weight: 700; font-size: 16px; white-space: nowrap; }
   #btnExit { padding: 6px 12px; font-size: 14px; }
-  #lbLive { background: var(--bg); border-left: 3px solid var(--accent); border-radius: 8px; padding: 10px 12px;
-            font-size: 14px; line-height: 1.4; }
-
-  #modal { position: fixed; inset: 0; background: rgba(0, 0, 0, .6); display: flex; align-items: center;
-           justify-content: center; padding: 16px; z-index: 10; }
-  #modal .card { max-width: 340px; }
-  #modal .title { font-size: 18px; font-weight: 700; }
-  #modal .row button { flex: 1; }
-  button.danger { background: #dc2626; color: #fff; font-weight: 700; }
 
   #wrap { position: relative; touch-action: none; user-select: none; -webkit-user-select: none; }
   canvas { display: block; border-radius: 10px; background: var(--board); }
@@ -110,12 +106,30 @@
   @media (pointer: coarse) { #pad { display: grid; } }
   #status { font-size: 12px; color: var(--muted); min-height: 16px; }
   #status.bad { color: var(--err); }
+
+  /* notices and the host's join prompt float at the top */
+  #float { position: fixed; top: 10px; left: 50%; transform: translateX(-50%); width: min(420px, calc(100% - 24px));
+           display: flex; flex-direction: column; gap: 8px; z-index: 20; pointer-events: none; }
+  .toast { background: #232c39; border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; font-size: 14px;
+           box-shadow: 0 6px 20px rgba(0,0,0,.4); transition: opacity .4s; }
+  .toast.fade { opacity: 0; }
+  #admit { pointer-events: auto; background: var(--card); border: 1px solid var(--accent); border-radius: 12px; padding: 12px 14px;
+           box-shadow: 0 8px 24px rgba(0,0,0,.5); display: flex; flex-direction: column; gap: 10px; }
+  #admit .title { font-weight: 700; }
+  #admit .row { flex-wrap: wrap; }
+  #admit .row button { flex: 1 1 auto; padding: 9px 10px; font-size: 14px; }
+
+  #modal { position: fixed; inset: 0; background: rgba(0, 0, 0, .6); display: flex; align-items: center;
+           justify-content: center; padding: 16px; z-index: 30; }
+  #modal .card { max-width: 340px; }
+  #modal .title { font-size: 18px; font-weight: 700; }
+  #modal .row button { flex: 1; }
 </style>
 </head>
 <body>
   <header>
-    <h1>Snake</h1>
-    <div id="roomChip" class="hidden">Room <b id="chipCode"></b></div>
+    <h1>Game Room</h1>
+    <div id="roomChip" class="hidden"><span id="chipGame"></span> · Room <b id="chipCode"></b></div>
     <button id="btnSound" title="Sound on/off" aria-label="Sound on/off">🔊</button>
   </header>
 
@@ -123,6 +137,8 @@
   <section id="home" class="card">
     <div class="label">Your name</div>
     <input id="inName" maxlength="12" placeholder="e.g. Arnaldo" autocomplete="off">
+    <div class="label">Game</div>
+    <select id="inGame"></select>
     <button id="btnCreate" class="primary">Create a room</button>
     <div class="or">or join a friend's room</div>
     <div class="row">
@@ -158,37 +174,9 @@
     <div class="label">Players <span id="lbCount"></span></div>
     <ul id="lbPlayers"></ul>
 
-    <div class="label">Game mode</div>
-    <div class="seg" data-set="mode">
-      <button data-val="rounds">Last snake standing</button>
-      <button data-val="endless">Free-for-all</button>
-    </div>
-    <div class="hint" id="modeHint"></div>
-
-    <div id="durBox">
-      <div class="label">Duration</div>
-      <div class="seg" data-set="duration">
-        <button data-val="60">1 min</button>
-        <button data-val="120">2 min</button>
-        <button data-val="180">3 min</button>
-      </div>
-    </div>
-
-    <div class="label">Speed</div>
-    <div class="seg" data-set="speed">
-      <button data-val="slow">Slow</button>
-      <button data-val="normal">Normal</button>
-      <button data-val="fast">Fast</button>
-    </div>
-
-    <div class="label">Arena</div>
-    <div class="seg" data-set="size">
-      <button data-val="small">Small</button>
-      <button data-val="medium">Medium</button>
-      <button data-val="large">Large</button>
-      <button data-val="huge">Huge</button>
-    </div>
-    <div class="hint" id="sizeHint"></div>
+    <div class="label">Game</div>
+    <select id="lbGame"></select>
+    <div id="lbSettings"></div>
 
     <button id="btnStart" class="primary">Start</button>
     <div id="lbWait" class="hint" style="text-align:center"></div>
@@ -215,6 +203,19 @@
 
   <div id="status">Connecting…</div>
 
+  <div id="float">
+    <div id="admit" class="hidden">
+      <div class="title" id="admitTitle"></div>
+      <div class="hint" id="admitText"></div>
+      <div class="row">
+        <button id="btnAdmitRestart" class="primary">Restart with them</button>
+        <button id="btnAdmitNow">Let in now</button>
+        <button id="btnAdmitLater">Later</button>
+      </div>
+    </div>
+    <div id="toasts" style="display:flex;flex-direction:column;gap:8px"></div>
+  </div>
+
   <div id="modal" class="hidden">
     <div class="card" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
       <div class="title" id="modalTitle">Exit this match?</div>
@@ -233,11 +234,7 @@
   const css = getComputedStyle(document.documentElement);
   const color = n => css.getPropertyValue(n).trim();
   const esc = s => String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-
-  const MODE_HINT = {
-    rounds: "Crash and you're out until the next round. The last snake alive wins.",
-    endless: "Crash and you're back after 3 seconds. Highest score when time runs out wins.",
-  };
+  const fmtTime = t => `${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")}`;
 
   let ws = null;
   let me = null;          // my player id
@@ -245,14 +242,39 @@
   let st = null;          // latest room state from the server
   let holdUntil = 0;      // keep the board visible briefly after a match ends
   let qrFor = null;
-  const fmtTime = t => `${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")}`;
+  let catalog = [{ id: "snake", name: "Snake" }];
+  const dismissed = new Set();   // join requests the host answered "Later"
 
   // ---------------------------------------------------------- storage
   const store = {
     get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
     set(k, v) { try { localStorage.setItem(k, v); } catch (e) {} },
   };
-  $("inName").value = store.get("snake.name") || "";
+  $("inName").value = store.get("room.name") || store.get("snake.name") || "";
+  const urlRoom = new URLSearchParams(location.search).get("room");
+  if (urlRoom) $("inCode").value = urlRoom.toUpperCase().slice(0, 4);
+
+  function fillGameSelect(sel, value) {
+    const html = catalog.map(g => `<option value="${esc(g.id)}">${esc(g.name)}</option>`).join("");
+    if (sel.dataset.html !== html) { sel.innerHTML = html; sel.dataset.html = html; }
+    if (value) sel.value = value;
+  }
+  fillGameSelect($("inGame"), store.get("room.game") || "snake");
+
+  // game scripts are loaded on demand from /static/games/<id>.js
+  const loading = {};
+  function gameModule(id) {
+    if (window.GAMES && window.GAMES[id]) return window.GAMES[id];
+    if (!loading[id]) {
+      loading[id] = true;
+      const s = document.createElement("script");
+      s.src = `/static/games/${encodeURIComponent(id)}.js`;
+      s.onload = update;
+      document.head.appendChild(s);
+    }
+    return null;
+  }
+  gameModule("snake");
 
   // ---------------------------------------------------------- sound
   // generated with the Web Audio API, so there are no audio files to load
@@ -267,7 +289,6 @@
     if (actx.state === "suspended") actx.resume();
     return actx;
   }
-  // browsers only allow audio after a tap or key press
   ["pointerdown", "keydown", "touchstart"].forEach(ev =>
     window.addEventListener(ev, () => { if (soundOn) audio(); }, { passive: true }));
 
@@ -286,15 +307,16 @@
     o.stop(t + dur + 0.02);
   }
   const SFX = {
-    eat()   { tone(660, 0, .07, "square", .05); tone(990, .06, .09, "square", .05); },
-    crash() { tone(320, 0, .5, "sawtooth", .08, 55); },
-    win()   { [523, 659, 784, 1047].forEach((f, i) => tone(f, i * .12, i === 3 ? .45 : .14, "triangle", .12)); },
-    end()   { tone(440, 0, .18, "triangle", .1); tone(330, .18, .32, "triangle", .1); },
-    tick()  { tone(880, 0, .08, "sine", .08); },
-    go()    { tone(1320, 0, .25, "sine", .1); },
+    eat()    { tone(660, 0, .07, "square", .05); tone(990, .06, .09, "square", .05); },
+    crash()  { tone(320, 0, .5, "sawtooth", .08, 55); },
+    win()    { [523, 659, 784, 1047].forEach((f, i) => tone(f, i * .12, i === 3 ? .45 : .14, "triangle", .12)); },
+    end()    { tone(440, 0, .18, "triangle", .1); tone(330, .18, .32, "triangle", .1); },
+    tick()   { tone(880, 0, .08, "sine", .08); },
+    go()     { tone(1320, 0, .25, "sine", .1); },
+    notice() { tone(740, 0, .1, "sine", .06); tone(988, .1, .14, "sine", .06); },
   };
   function play(name, delay) {
-    if (!soundOn) return;
+    if (!soundOn || !SFX[name]) return;
     if (delay) setTimeout(() => SFX[name](), delay); else SFX[name]();
   }
   function paintSound() { $("btnSound").textContent = soundOn ? "🔊" : "🔇"; }
@@ -306,25 +328,53 @@
   };
   paintSound();
 
+  // what game modules get to work with
+  const api = {
+    $, canvas, ctx, color, esc, fmtTime, play,
+    st: () => st, me: () => me,
+    setMessage(big, small, huge, dim) {
+      $("msg").classList.toggle("hidden", !big && big !== 0);
+      $("msg").classList.toggle("dim", !!dim);
+      $("msgBig").textContent = big;
+      $("msgBig").classList.toggle("huge", !!huge);
+      $("msgSmall").textContent = small || "";
+    },
+  };
+
   function sounds(prev, next) {
-    if (!me || !prev) return;
-    const was = prev.players.find(p => p.id === me);
-    const now = next.players.find(p => p.id === me);
-    let crashed = false;
-    if (was && now && prev.state === "playing") {
-      if (now.score > was.score) play("eat");
-      if (was.alive && !now.alive && !now.quit) { play("crash"); crashed = true; }
-    }
-    if (now && !now.quit) {
-      if (next.state === "countdown" && next.countdown !== prev.countdown) play("tick");
-      if (prev.state === "countdown" && next.state === "playing") play("go");
-    }
-    if (prev.state !== "lobby" && next.state === "lobby" && next.results) {
-      play(next.results.winner === me ? "win" : "end", crashed ? 550 : 0);
+    if (!me || !prev || prev.game_id !== next.game_id) return;
+    const mod = gameModule(next.game_id);
+    const crashed = mod && mod.sounds ? mod.sounds(api, prev, next) : false;
+    if (prev.state === "match" && next.state === "lobby" && next.results) {
+      const mine = prev.players.find(p => p.id === me);
+      if (mine && !mine.waiting) play(next.results.winner === me ? "win" : "end", crashed ? 550 : 0);
     }
   }
-  const urlRoom = new URLSearchParams(location.search).get("room");
-  if (urlRoom) $("inCode").value = urlRoom.toUpperCase().slice(0, 4);
+
+  // ---------------------------------------------------------- notices
+  function toast(text) {
+    const el = document.createElement("div");
+    el.className = "toast";
+    el.textContent = text;
+    $("toasts").appendChild(el);
+    setTimeout(() => el.classList.add("fade"), 3600);
+    setTimeout(() => el.remove(), 4100);
+  }
+  function showNotices(msg) {
+    for (const n of msg.notices || []) {
+      if (n.kind === "host") {
+        toast(n.pid === me ? "You are now the host." : `${n.name} is now the host.`);
+        continue;
+      }
+      if (n.pid === me) continue;
+      if (n.kind === "join") {
+        toast(msg.state === "match" ? `${n.name} entered the room – waiting to play` : `${n.name} joined the room`);
+        play("notice");
+      } else if (n.kind === "leave") {
+        toast(`${n.name} left the room`);
+      }
+    }
+  }
 
   // ---------------------------------------------------------- connection
   function connect() {
@@ -350,16 +400,19 @@
     if (msg.type === "joined") {
       me = msg.you; code = msg.code;
       $("homeErr").textContent = "";
+      dismissed.clear();
       history.replaceState(null, "", `?room=${code}`);
     } else if (msg.type === "error") {
       $("homeErr").textContent = msg.msg;
       if (!me) { code = null; history.replaceState(null, "", location.pathname); }
     } else if (msg.type === "state") {
-      if (st && st.state === "playing" && msg.state === "lobby" && msg.results) {
+      if (msg.games) { catalog = msg.games; fillGameSelect($("inGame")); }
+      if (st && st.state === "match" && msg.state === "lobby" && msg.results) {
         holdUntil = Date.now() + 2200;
         setTimeout(update, 2250);
       }
       sounds(st, msg);
+      showNotices(msg);
       st = msg;
       if (st.state === "lobby") closeModal();
     }
@@ -367,11 +420,13 @@
   }
 
   // ---------------------------------------------------------- screens
+  function myPlayer() { return st && st.players.find(p => p.id === me); }
+
   function screen() {
     if (!me || !st) return "home";
     if (st.state === "lobby") return Date.now() >= holdUntil ? "lobby" : "game";
-    const mine = st.players.find(p => p.id === me);
-    if (mine && mine.quit) return "lobby";      // left the match: wait in the room
+    const mine = myPlayer();
+    if (mine && (mine.quit || mine.waiting)) return "lobby";   // not in this match
     return "game";
   }
 
@@ -381,10 +436,43 @@
     $("lobby").classList.toggle("hidden", s !== "lobby");
     $("game").classList.toggle("hidden", s !== "game");
     $("roomChip").classList.toggle("hidden", s === "home");
-    if (s !== "home" && st) $("chipCode").textContent = st.code;
+    if (s !== "home" && st) { $("chipCode").textContent = st.code; $("chipGame").textContent = st.game_name; }
     if (s === "lobby") renderLobby();
-    if (s === "game") { resize(); renderGame(); }
+    if (s === "game") {
+      const mod = gameModule(st.game_id);
+      if (mod) mod.render(api);
+      $("btnExit").classList.toggle("hidden", st.state !== "match");
+    }
+    renderAdmit();
   }
+
+  // ---------------------------------------------------------- host: join requests
+  function renderAdmit() {
+    const waiting = st && me && st.host === me && st.state === "match"
+      ? st.players.filter(p => p.waiting && !dismissed.has(p.id)) : [];
+    $("admit").classList.toggle("hidden", !waiting.length);
+    if (!waiting.length) return;
+    const names = waiting.map(p => p.name);
+    const list = names.length > 1 ? names.slice(0, -1).join(", ") + " and " + names.at(-1) : names[0];
+    $("admitTitle").textContent = `${list} ${names.length > 1 ? "want" : "wants"} to play`;
+    $("admitText").textContent = st.can_drop_in
+      ? "Restart the match with everyone, let them in now, or let them wait for the next match."
+      : "Restart the match with everyone now, or let them wait for the next match.";
+    $("btnAdmitRestart").textContent = names.length > 1 ? "Restart with them" : `Restart with ${names[0]}`;
+    $("btnAdmitNow").classList.toggle("hidden", !st.can_drop_in);
+  }
+  const waitingNow = () => st.players.filter(p => p.waiting && !dismissed.has(p.id));
+  $("btnAdmitRestart").onclick = () => {
+    const w = waitingNow();
+    if (w.length) send({ type: "admit", pid: w[0].id, action: "restart" });
+  };
+  $("btnAdmitNow").onclick = () => {
+    for (const p of waitingNow()) send({ type: "admit", pid: p.id, action: "now" });
+  };
+  $("btnAdmitLater").onclick = () => {
+    for (const p of waitingNow()) dismissed.add(p.id);
+    renderAdmit();
+  };
 
   // ---------------------------------------------------------- lobby
   function shareLink() { return `${location.origin}${location.pathname}?room=${st.code}`; }
@@ -393,28 +481,29 @@
     const isHost = st.host === me;
     const live = st.state !== "lobby";          // a match is running without me
     const canEdit = isHost && !live;
+    const mine = myPlayer();
+    const mod = gameModule(st.game_id);
 
-    $("lbLive").classList.toggle("hidden", !live);
-    if (live) {
-      const playing = st.players.filter(p => !p.quit && (st.mode === "endless" || p.in_round));
-      const info = st.state === "countdown" ? "starting"
-        : st.mode === "endless" ? `${fmtTime(st.time_left || 0)} left`
-        : `${playing.filter(p => p.alive).length} still alive`;
-      $("lbLive").innerHTML = `<b>Match in progress</b> – ${info}.<br>You'll play in the next one.`;
-    }
     $("lbCode").textContent = st.code;
     $("lbLink").value = shareLink();
     $("btnShare").classList.toggle("hidden", !navigator.share);
-
     if (qrFor !== st.code && window.QRCode) {
       $("qr").innerHTML = "";
       new QRCode($("qr"), { text: shareLink(), width: 192, height: 192, correctLevel: QRCode.CorrectLevel.M });
       qrFor = st.code;
     }
 
-    // last match results
+    $("lbLive").classList.toggle("hidden", !live);
+    if (live) {
+      const info = mod && mod.liveInfo ? ` – ${mod.liveInfo(st)}` : "";
+      const after = mine && mine.waiting
+        ? (isHost ? "You'll play in the next one." : "The host has been asked to let you in.")
+        : "You'll play in the next one.";
+      $("lbLive").innerHTML = `<b>Match in progress</b>${esc(info)}.<br>${after}`;
+    }
+
     const r = st.results;
-    $("results").classList.toggle("hidden", !r);
+    $("results").classList.toggle("hidden", !r || live);
     if (r) {
       $("resTitle").textContent = r.title;
       $("resList").innerHTML = r.ranking.map((p, i) => `
@@ -423,59 +512,58 @@
             <span class="num">${p.score}</span></li>`).join("");
     }
 
-    // players
-    $("lbCount").textContent = `(${st.players.length}/${st.max})`;
     const status = p => !live ? ""
+      : p.waiting ? "waiting"
       : p.quit ? "left match"
-      : p.alive ? "playing"
-      : (st.mode === "endless" && p.respawn != null) ? "respawning" : "out";
+      : mod && mod.status ? mod.status(st, p.id) : "playing";
+    $("lbCount").textContent = `(${st.players.length}/${st.max})`;
     $("lbPlayers").innerHTML = st.players.map(p => `
       <li><span class="dot" style="background:${p.color}"></span>
           <span class="name">${esc(p.name)}${p.id === me ? ' <span class="tag">(you)</span>' : ""}</span>
-          ${live ? `<span class="tag">${status(p)}</span>` : ""}
+          ${live ? `<span class="tag">${esc(status(p))}</span>` : ""}
           ${p.id === st.host ? '<span class="tag">host</span>' : ""}
           ${p.wins ? `<span class="tag">${p.wins} win${p.wins > 1 ? "s" : ""}</span>` : ""}</li>`).join("");
 
-    // settings
-    const cur = { mode: st.mode, duration: String(st.duration), speed: st.speed, size: st.size };
-    document.querySelectorAll(".seg").forEach(seg => {
-      seg.querySelectorAll("button").forEach(b => {
-        b.classList.toggle("on", b.dataset.val === cur[seg.dataset.set]);
-        b.disabled = !canEdit;
-      });
-    });
-    $("modeHint").textContent = MODE_HINT[st.mode];
-    $("durBox").classList.toggle("hidden", st.mode !== "endless");
-    $("sizeHint").textContent = `${st.w} × ${st.h} cells` +
-      (st.size === "huge" ? " – very small cells on phones" : st.size === "small" ? " – best for 1–2 players" : "");
+    fillGameSelect($("lbGame"), st.game_id);
+    $("lbGame").disabled = !canEdit;
+
+    // settings, built from the list the game declares
+    const html = st.schema.map((s, si) => {
+      if (s.show_if && Object.entries(s.show_if).some(([k, v]) => st.settings[k] !== v)) return "";
+      const cur = st.settings[s.key];
+      const btns = s.options.map(([val, label], oi) =>
+        `<button data-si="${si}" data-oi="${oi}" class="${val === cur ? "on" : ""}" ${canEdit ? "" : "disabled"}>${esc(label)}</button>`).join("");
+      const hint = s.hints && s.hints[cur] ? `<div class="hint">${esc(s.hints[cur])}</div>` : "";
+      return `<div><div class="label">${esc(s.label)}</div><div class="seg">${btns}</div>${hint}</div>`;
+    }).join("");
+    if ($("lbSettings").dataset.html !== html) { $("lbSettings").innerHTML = html; $("lbSettings").dataset.html = html; }
 
     $("btnStart").classList.toggle("hidden", !isHost || live);
-    $("btnStart").textContent = st.results ? "Play again" : "Start";
+    $("btnStart").textContent = r ? "Play again" : "Start";
     $("lbWait").textContent = live ? ""
       : isHost ? (st.players.length < 2 ? "You can start alone to try it, or wait for friends to join." : "")
       : "Waiting for the host to start…";
   }
 
-  document.querySelectorAll(".seg").forEach(seg => {
-    seg.addEventListener("click", e => {
-      const b = e.target.closest("button");
-      if (!b || b.disabled || !st) return;
-      const settings = { type: "settings", mode: st.mode, duration: st.duration, speed: st.speed, size: st.size };
-      settings[seg.dataset.set] = seg.dataset.set === "duration" ? Number(b.dataset.val) : b.dataset.val;
-      send(settings);
-    });
+  $("lbSettings").addEventListener("click", e => {
+    const b = e.target.closest("button");
+    if (!b || b.disabled || !st) return;
+    const s = st.schema[+b.dataset.si];
+    send({ type: "setting", key: s.key, value: s.options[+b.dataset.oi][0] });
   });
+  $("lbGame").addEventListener("change", e => send({ type: "game", id: e.target.value }));
 
   $("btnCreate").onclick = () => {
     if (!myName()) { $("homeErr").textContent = "Type your name first."; $("inName").focus(); return; }
-    store.set("snake.name", myName());
-    send({ type: "create", name: myName() });
+    store.set("room.name", myName());
+    store.set("room.game", $("inGame").value);
+    send({ type: "create", name: myName(), game: $("inGame").value });
   };
   $("btnJoin").onclick = () => {
     const c = $("inCode").value.trim().toUpperCase();
     if (!myName()) { $("homeErr").textContent = "Type your name first."; $("inName").focus(); return; }
     if (c.length !== 4) { $("homeErr").textContent = "The room code has 4 characters."; $("inCode").focus(); return; }
-    store.set("snake.name", myName());
+    store.set("room.name", myName());
     send({ type: "join", code: c, name: myName() });
   };
   $("inCode").addEventListener("keydown", e => { if (e.key === "Enter") $("btnJoin").click(); });
@@ -495,7 +583,11 @@
     $("btnCopy").textContent = "Copied";
     setTimeout(() => { $("btnCopy").textContent = "Copy"; }, 1500);
   };
-  // exit the current match, with confirmation
+  $("btnShare").onclick = () => {
+    navigator.share({ title: st.game_name, text: `Join my ${st.game_name} room ${st.code}`, url: shareLink() }).catch(() => {});
+  };
+
+  // ---------------------------------------------------------- exit match (with confirmation)
   function openModal() { $("modal").classList.remove("hidden"); $("btnNo").focus(); }
   function closeModal() { $("modal").classList.add("hidden"); }
   const modalOpen = () => !$("modal").classList.contains("hidden");
@@ -504,146 +596,18 @@
   $("btnYes").onclick = () => { closeModal(); send({ type: "quit" }); };
   $("modal").addEventListener("click", e => { if (e.target.id === "modal") closeModal(); });
 
-  $("btnShare").onclick = () => {
-    navigator.share({ title: "Snake", text: `Join my Snake room ${st.code}`, url: shareLink() }).catch(() => {});
-  };
-
-  // ---------------------------------------------------------- game drawing
-  let cell = 20, sizedFor = "";
-  function resize() {
-    if (!st) return;
-    const padH = matchMedia("(pointer: coarse)").matches ? 135 : 0;
-    const availW = Math.min(window.innerWidth - 32, 960);
-    const availH = window.innerHeight - 115 - padH;
-    const c = Math.max(8, Math.floor(Math.min(availW / st.w, availH / st.h)));
-    const key = `${c}:${st.w}:${st.h}`;
-    if (key === sizedFor) return;
-    sizedFor = key;
-    cell = c;
-    const dpr = window.devicePixelRatio || 1;
-    canvas.style.width = cell * st.w + "px";
-    canvas.style.height = cell * st.h + "px";
-    canvas.width = cell * st.w * dpr;
-    canvas.height = cell * st.h * dpr;
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  }
-
-  function lighten(hex, amt) {
-    const n = parseInt(hex.slice(1), 16);
-    const mix = v => Math.round(v + (255 - v) * amt);
-    return `rgb(${mix(n >> 16)},${mix((n >> 8) & 255)},${mix(n & 255)})`;
-  }
-
-  function roundRect(x, y, s, r) {
-    ctx.beginPath();
-    ctx.moveTo(x + r, y);
-    ctx.arcTo(x + s, y, x + s, y + s, r);
-    ctx.arcTo(x + s, y + s, x, y + s, r);
-    ctx.arcTo(x, y + s, x, y, r);
-    ctx.arcTo(x, y, x + s, y, r);
-    ctx.fill();
-  }
-
-  function renderGame() {
-    const { w, h } = st;
-    ctx.fillStyle = color("--board");
-    ctx.fillRect(0, 0, w * cell, h * cell);
-    ctx.fillStyle = color("--grid");
-    for (let y = 0; y < h; y++)
-      for (let x = y % 2; x < w; x += 2)
-        ctx.fillRect(x * cell, y * cell, cell, cell);
-
-    ctx.fillStyle = color("--food");
-    for (const [fx, fy] of st.food) {
-      ctx.beginPath();
-      ctx.arc((fx + .5) * cell, (fy + .5) * cell, cell * .34, 0, Math.PI * 2);
-      ctx.fill();
-    }
-
-    const gap = Math.max(1, cell * .08);
-    const D = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] };
-    // others first, my snake on top
-    const order = [...st.players].sort((a, b) => (a.id === me) - (b.id === me));
-    for (const p of order) {
-      if (!p.body.length) continue;
-      p.body.forEach(([x, y], i) => {
-        ctx.fillStyle = i === 0 ? lighten(p.color, .45) : p.color;
-        roundRect(x * cell + gap, y * cell + gap, cell - gap * 2, cell * .28);
-      });
-      const [hx, hy] = p.body[0];
-      const d = D[p.dir];
-      const cx = (hx + .5) * cell, cy = (hy + .5) * cell, off = cell * .2, fwd = cell * .12;
-      ctx.fillStyle = color("--bg");
-      for (const s of [-1, 1]) {
-        ctx.beginPath();
-        ctx.arc(cx + d[0] * fwd + (d[1] ? s * off : 0), cy + d[1] * fwd + (d[0] ? s * off : 0), cell * .08, 0, Math.PI * 2);
-        ctx.fill();
-      }
-      // name tag above the head
-      if (cell >= 12 && st.players.length > 1) {
-        ctx.font = `600 ${Math.max(10, Math.round(cell * .55))}px system-ui, sans-serif`;
-        ctx.textAlign = "center";
-        ctx.textBaseline = "bottom";
-        ctx.fillStyle = p.id === me ? "#ffffff" : lighten(p.color, .3);
-        const ty = hy > 0 ? hy * cell - 2 : (hy + 1) * cell + cell * .75;
-        ctx.fillText(p.id === me ? "you" : p.name, cx, ty);
-      }
-    }
-
-    // HUD
-    const sorted = [...st.players].sort((a, b) => b.score - a.score);
-    $("chips").innerHTML = sorted.map(p => {
-      const out = st.state !== "lobby" && !p.alive;
-      return `<span class="chip${out ? " dead" : ""}${p.id === me ? " me" : ""}">
-        <span class="dot" style="background:${p.color}"></span>${esc(p.name)} <b>${p.score}</b></span>`;
-    }).join("");
-    $("btnExit").classList.toggle("hidden", st.state === "lobby");
-    if (st.mode === "endless" && st.time_left != null) {
-      $("timer").textContent = fmtTime(st.time_left);
-    } else if (st.mode === "rounds" && st.state === "playing") {
-      const inRound = st.players.filter(p => p.in_round);
-      $("timer").textContent = inRound.length > 1 ? `${inRound.filter(p => p.alive).length}/${inRound.length} alive` : "";
-    } else {
-      $("timer").textContent = "";
-    }
-
-    // centre message
-    let big = "", small = "", huge = false, dim = false;
-    const mine = st.players.find(p => p.id === me);
-    if (st.state === "countdown") {
-      big = st.countdown; huge = true;
-      small = st.mode === "rounds" ? "Last snake standing" : `Free-for-all · ${st.duration / 60} min`;
-    } else if (st.state === "lobby" && st.results) {
-      big = st.results.title; dim = true;
-    } else if (st.state === "playing" && mine && !mine.alive) {
-      if (st.mode === "endless") {
-        big = "Crashed!";
-        small = mine.respawn != null ? `Back in ${Math.max(0, mine.respawn).toFixed(1)} s` : "Back in a moment";
-      } else if (mine.in_round) {
-        big = "You're out"; small = "Watching the others…"; dim = true;
-      } else {
-        big = "Round in progress"; small = "You'll play in the next round"; dim = true;
-      }
-    }
-    $("msg").classList.toggle("hidden", !big);
-    $("msg").classList.toggle("dim", dim);
-    $("msgBig").textContent = big;
-    $("msgBig").classList.toggle("huge", huge);
-    $("msgSmall").textContent = small;
-  }
-
   // ---------------------------------------------------------- input
-  const turn = dir => send({ type: "dir", dir });
+  const turn = dir => send({ type: "input", dir });
   const KEYS = {
     ArrowUp: "up", ArrowDown: "down", ArrowLeft: "left", ArrowRight: "right",
     w: "up", s: "down", a: "left", d: "right", W: "up", S: "down", A: "left", D: "right",
   };
   window.addEventListener("keydown", e => {
     if (modalOpen()) { if (e.key === "Escape") closeModal(); return; }
-    if (e.target.tagName === "INPUT") return;
-    if (e.key === "Escape" && screen() === "game" && st.state !== "lobby") { openModal(); return; }
+    if (e.target.tagName === "INPUT" || e.target.tagName === "SELECT") return;
+    if (e.key === "Escape" && screen() === "game" && st.state === "match") { openModal(); return; }
     if (screen() === "game" && KEYS[e.key]) { e.preventDefault(); turn(KEYS[e.key]); }
-    else if ((e.key === " " || e.key === "Enter") && screen() === "lobby" && st.host === me) {
+    else if ((e.key === " " || e.key === "Enter") && screen() === "lobby" && st.host === me && st.state === "lobby") {
       e.preventDefault(); send({ type: "start" });
     }
   });
@@ -667,7 +631,10 @@
     b.addEventListener("pointerdown", e => { e.preventDefault(); turn(b.dataset.dir); });
   });
 
-  window.addEventListener("resize", () => { sizedFor = ""; update(); });
+  window.addEventListener("resize", () => {
+    for (const m of Object.values(window.GAMES || {})) if (m.onResize) m.onResize();
+    update();
+  });
   window.addEventListener("load", () => { if (screen() === "lobby") { qrFor = null; renderLobby(); } });
   connect();
   update();
