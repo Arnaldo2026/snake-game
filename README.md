@@ -13,10 +13,12 @@ link, or the QR code.
 | `games/snake.py` | Snake rules and its lobby settings (runs on the server) |
 | `games/spacewars.py` | Space Wars rules and physics: ships, star gravity, torpedoes, hyperspace, asteroids, solo training |
 | `games/asteroids.py` | Asteroids rules and physics: 1-4 ships, splitting rocks, waves, saucers, lives |
+| `games/lander.py` | Lunar Lander rules and physics: terrain with multiplier pads, 4 missions, variable throttle, fuel |
 | `static/index.html` | The page: home, lobby, game screen, join prompts, sounds |
 | `static/games/snake.js` | Snake drawing, scoreboard, sounds and controls (runs in the browser) |
 | `static/games/spacewars.js` | Space Wars vector drawing, scoreboard, sounds and controls |
 | `static/games/asteroids.js` | Asteroids vector drawing, scoreboard with lives, sounds and controls |
+| `static/games/lander.js` | Lunar Lander drawing with auto-zoom, cabinet readouts, engine sound, thrust lever |
 | `static/games/<id>.svg` | Picture of each game for the home screen |
 
 ## Run locally
@@ -32,7 +34,7 @@ Then open http://localhost:8000, or the phone address it prints (same Wi-Fi).
    the top of `games/snake.py`, and add it to `GAMES` in `games/__init__.py`.
 2. Write `static/games/<id>.js` that registers `window.GAMES["<id>"]` with a
    `render(api)` function, its `controls` (keys and on-screen buttons; `hold: true`
-   for press-and-hold controls) and optionally `sounds`, `liveInfo`, `status`.
+   for press-and-hold controls; a pad item with `type: "lever"` gives a vertical slider) and optionally `sounds`, `liveInfo`, `status`.
 3. Draw a picture for the home screen as `static/games/<id>.svg`.
 
 The new game then appears in the game list and on the home screen, and its settings in the lobby.

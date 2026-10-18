@@ -30,7 +30,7 @@
   body { display: flex; flex-direction: column; align-items: center; padding: 10px 16px 16px; gap: 10px; }
   .hidden { display: none !important; }
   header { width: 100%; max-width: 960px; display: flex; justify-content: space-between; align-items: center; gap: 12px; }
-  h1 { margin: 0; font-size: 20px; letter-spacing: .5px; flex: 1; }
+  h1 { margin: 0; font-size: 20px; letter-spacing: .5px; flex: 1; white-space: nowrap; }
   #btnSound { background: none; font-size: 20px; padding: 4px 6px; line-height: 1; }
   #roomChip { font-size: 13px; color: var(--muted); }
   #roomChip b { color: var(--text); letter-spacing: 2px; }
@@ -102,6 +102,12 @@
   #pad button { font-size: 22px; touch-action: none; padding: 0; user-select: none; -webkit-user-select: none; }
   #pad button.held { background: var(--btn-on); }
   #pad button small { display: block; font-size: 10px; color: var(--muted); }
+  /* a vertical lever (e.g. a variable throttle) */
+  .lever { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
+           background: var(--btn); border-radius: 10px; padding: 6px 0; touch-action: none; }
+  .lever input { writing-mode: vertical-lr; direction: rtl; -webkit-appearance: slider-vertical; appearance: slider-vertical;
+                 width: 44px; flex: 1; min-height: 0; margin: 0; accent-color: var(--accent); padding: 0; border: 0; background: none; }
+  .lever small { font-size: 10px; color: var(--muted); }
   @media (pointer: coarse) { #pad { display: grid; } #keysHelp { display: none; } }
   #keysHelp { text-align: center; }
   #status { font-size: 12px; color: var(--muted); min-height: 16px; }
@@ -136,7 +142,9 @@
   .tile + .tile { border-left: 1px solid var(--line); }
   #home { background: rgba(23, 29, 38, .9); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
   @media (max-width: 700px) {
-    #gallery { top: auto; height: 36vh; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); }
+    #gallery { top: auto; height: 36vh; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
+    .tile + .tile { border-left: 0; }
+    .tile { outline: 1px solid var(--line); }
     .tile .tname { bottom: 16px; font-size: 18px; letter-spacing: 1px; padding: 0 4px; }
   }
 
@@ -367,6 +375,8 @@
   // what game modules get to work with
   const api = {
     $, canvas, ctx, color, esc, fmtTime, play, tone, sfx: SFX,
+    audio: () => (soundOn ? audio() : null),       // for continuous game sounds (e.g. an engine)
+    soundOn: () => soundOn,
     st: () => st, me: () => me,
     setMessage(big, small, huge, dim) {
       $("msg").classList.toggle("hidden", !big && big !== 0);
@@ -481,7 +491,11 @@
     $("gallery").classList.toggle("hidden", s !== "home");
     if (s !== "home" && st) { $("chipCode").textContent = st.code; $("chipGame").textContent = st.game_name; }
     if (s === "lobby") renderLobby();
-    if (s !== "game") releaseAll();
+    if (s !== "game") {
+      releaseAll();
+      // let games stop continuous sounds when their screen goes away
+      for (const m of Object.values(window.GAMES || {})) if (m.onHide) m.onHide();
+    }
     if (s === "game") {
       const mod = gameModule(st.game_id);
       if (mod) { setupControls(st.game_id, mod); mod.render(api); }
@@ -658,10 +672,15 @@
     controls = Object.assign({ keys: {}, pad: { buttons: [] } }, mod.controls || {});
     const pad = controls.pad;
     $("pad").style.gridTemplateColumns = pad.cols || "";
-    $("pad").innerHTML = pad.buttons.map(b => `
-      <button data-key="${esc(b.key)}" aria-label="${esc(b.name || b.key)}"
-        style="grid-column:${b.col}${b.span ? ` / span ${b.span}` : ""};grid-row:${b.row}">
-        ${b.label}${b.sub ? `<small>${esc(b.sub)}</small>` : ""}</button>`).join("");
+    $("pad").innerHTML = pad.buttons.map(b => {
+      const place = `grid-column:${b.col}${b.span ? ` / span ${b.span}` : ""};grid-row:${b.row}${b.rows ? ` / span ${b.rows}` : ""}`;
+      if (b.type === "lever") {
+        return `<div class="lever" style="${place}"><input type="range" min="0" max="100" value="0"
+          data-lever="${esc(b.key)}" aria-label="${esc(b.name || b.key)}"><small>${esc(b.sub || "")}</small></div>`;
+      }
+      return `<button data-key="${esc(b.key)}" aria-label="${esc(b.name || b.key)}" style="${place}">
+        ${b.label}${b.sub ? `<small>${esc(b.sub)}</small>` : ""}</button>`;
+    }).join("");
     $("keysHelp").textContent = controls.help || "";
   }
 
@@ -721,6 +740,19 @@
   };
   window.addEventListener("pointerup", lift);
   window.addEventListener("pointercancel", lift);
+
+  // levers send their position (0..1); while a finger is on one, the game won't move it
+  let leverHeld = null;
+  $("pad").addEventListener("input", e => {
+    const lv = e.target.dataset.lever;
+    if (lv) send({ type: "input", key: lv, value: e.target.value / 100 });
+  });
+  $("pad").addEventListener("pointerdown", e => { if (e.target.dataset.lever) leverHeld = e.target; }, true);
+  window.addEventListener("pointerup", () => { leverHeld = null; });
+  api.syncLever = (key, value) => {
+    const el = document.querySelector(`#pad input[data-lever="${key}"]`);
+    if (el && el !== leverHeld && Math.abs(el.value / 100 - value) > 0.02) el.value = Math.round(value * 100);
+  };
   $("pad").addEventListener("contextmenu", e => e.preventDefault());
 
   // swipe on the board (games that ask for it): fires as soon as the finger has moved far enough
