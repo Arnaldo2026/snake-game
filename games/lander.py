@@ -112,6 +112,8 @@ class Lander:
         self.landings = 0
         self.state = "waiting"     # waiting | flying | landed | crashed | done | out
         self.result = None         # last touchdown: {kind, points, mult, bonus}
+        self.abort_at = 0.0        # last abort burn (for the browser's flash and sound)
+        self.abort_denied_at = 0.0 # last abort refused for lack of fuel
 
 
 class LanderGame:
@@ -308,6 +310,9 @@ class LanderGame:
                     l.spin = 0.0
                     l.vy = min(l.vy, ABORT_VY)
                     l.vx *= 0.5
+                    l.abort_at = now
+                else:
+                    l.abort_denied_at = now
             if l.fuel <= 0:
                 l.fuel = 0.0
                 l.throttle = 0.0
@@ -405,6 +410,8 @@ class LanderGame:
                 "vx": r1(l.vx), "vy": r1(l.vy), "throttle": round(l.throttle, 2),
                 "fuel": int(l.fuel), "score": l.score, "state": l.state,
                 "alt": r1(max(0.0, self.ground(l.x) - l.y - LEG)) if l.state == "flying" else 0,
+                "abort": round(now - l.abort_at, 2) if now - l.abort_at < 1.5 else None,
+                "abort_denied": now - l.abort_denied_at < 1.5,
                 "result": l.result,
             } for l in self.landers.values()],
             "booms": [[r1(b[0]), r1(b[1]), round(now - b[2], 2)] for b in self.booms],

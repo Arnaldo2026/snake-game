@@ -56,8 +56,9 @@
     ctx.moveTo(7, 9); ctx.lineTo(11, 9);
     ctx.moveTo(-2, 6); ctx.lineTo(-3, 8.5); ctx.lineTo(3, 8.5); ctx.lineTo(2, 6);   // nozzle
     ctx.stroke();
-    if (l.state === "flying" && l.throttle > 0.02) {
-      const len = 4 + l.throttle * 18 * (0.75 + Math.random() * 0.5);
+    const burst = l.abort != null && l.abort < 0.7;          // abort burn: a big flame
+    if (l.state === "flying" && (l.throttle > 0.02 || burst)) {
+      const len = burst ? 26 + Math.random() * 10 : 4 + l.throttle * 18 * (0.75 + Math.random() * 0.5);
       ctx.strokeStyle = "#fde68a";
       ctx.shadowColor = "#fbbf24";
       ctx.beginPath();
@@ -192,6 +193,15 @@
         ctx.textAlign = "right";
         ctx.fillText(`${a}  ${b}`, cw - pad, pad + i * lh);
       });
+      // abort feedback, centred under the readouts
+      if (focus.abort != null || focus.abort_denied) {
+        ctx.textAlign = "center";
+        ctx.font = `800 ${Math.round(fs * 1.6)}px ui-monospace, Consolas, monospace`;
+        ctx.fillStyle = focus.abort != null ? "#fde68a" : "#f87171";
+        if (focus.abort == null || Math.floor(t * 6) % 2 === 0) {
+          ctx.fillText(focus.abort != null ? "ABORT" : "NOT ENOUGH FUEL TO ABORT", cw / 2, pad + lh * 3.2);
+        }
+      }
     }
 
     // scoreboard chips and descent info
@@ -291,6 +301,14 @@
     if (flying && mine.fuel < 100 && mine.fuel > 0 && performance.now() - beepAt > 800) {
       beepAt = performance.now();
       api.tone(1250, 0, .09, "square", .04);
+    }
+    const was = (pg.landers || []).find(l => l.id === me);
+    if (mine && mine.abort != null && !(was && was.abort != null)) {          // abort burn: a roar
+      api.tone(70, 0, .7, "sawtooth", .12, 220);
+      api.tone(140, 0, .5, "square", .05, 420);
+    }
+    if (mine && mine.abort_denied && !(was && was.abort_denied)) {
+      api.tone(300, 0, .12, "square", .06); api.tone(220, .14, .2, "square", .06);
     }
     let crashed = false;
     if (mine && mine.result) {

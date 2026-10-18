@@ -742,6 +742,8 @@
     const ctl = controls.keys[keyName(e)];
     if (screen() === "game" && ctl) {
       e.preventDefault();
+      // a button clicked earlier (e.g. the sound button) must not catch Space or Enter
+      if (document.activeElement && document.activeElement.tagName === "BUTTON") document.activeElement.blur();
       if (!(controls.hold && e.repeat)) press(ctl);
     } else if ((e.key === " " || e.key === "Enter") && screen() === "lobby" && st.host === me && st.state === "lobby") {
       e.preventDefault(); send({ type: "start" });
@@ -749,7 +751,10 @@
   });
   window.addEventListener("keyup", e => {
     const ctl = controls.keys[keyName(e)];
-    if (ctl) release(ctl);
+    if (ctl) {
+      if (screen() === "game") e.preventDefault();   // stops Space "clicking" a focused button
+      release(ctl);
+    }
   });
   window.addEventListener("blur", releaseAll);
 
