@@ -136,8 +136,8 @@
   .tile + .tile { border-left: 1px solid var(--line); }
   #home { background: rgba(23, 29, 38, .9); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
   @media (max-width: 700px) {
-    #gallery { top: auto; height: 40vh; }
-    .tile .tname { bottom: 18px; font-size: 24px; letter-spacing: 2px; }
+    #gallery { top: auto; height: 36vh; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); }
+    .tile .tname { bottom: 16px; font-size: 18px; letter-spacing: 1px; padding: 0 4px; }
   }
 
   #modal { position: fixed; inset: 0; background: rgba(0, 0, 0, .6); display: flex; align-items: center;
