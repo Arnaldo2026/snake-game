@@ -5,136 +5,391 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <meta name="theme-color" content="#10141a">
 <title>Snake</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <style>
   :root {
     --bg: #10141a;
+    --card: #171d26;
     --board: #171d26;
-    --grid: #1e2632;
-    --snake: #4ade80;
-    --head: #a3f7bf;
+    --grid: #1c232e;
+    --line: #2a3442;
     --food: #f87171;
     --text: #e6edf3;
     --muted: #8b98a8;
+    --accent: #4ade80;
     --btn: #232c39;
-    --btn-active: #2f3b4c;
+    --btn-on: #34445a;
+    --err: #f87171;
   }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   html, body {
-    margin: 0; height: 100%; background: var(--bg); color: var(--text);
+    margin: 0; min-height: 100%; background: var(--bg); color: var(--text);
     font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-    overscroll-behavior: none; user-select: none; -webkit-user-select: none;
+    overscroll-behavior: none;
   }
-  body { display: flex; flex-direction: column; align-items: center; padding: 12px 16px; gap: 10px; }
-  header {
-    width: 100%; max-width: 520px; display: flex; justify-content: space-between; align-items: baseline;
-  }
+  body { display: flex; flex-direction: column; align-items: center; padding: 10px 16px 16px; gap: 10px; }
+  .hidden { display: none !important; }
+  header { width: 100%; max-width: 520px; display: flex; justify-content: space-between; align-items: center; }
   h1 { margin: 0; font-size: 20px; letter-spacing: .5px; }
-  .scores { display: flex; gap: 16px; font-variant-numeric: tabular-nums; }
-  .scores span { color: var(--muted); font-size: 13px; }
-  .scores b { font-size: 18px; margin-left: 4px; }
-  #wrap { position: relative; touch-action: none; }
+  #roomChip { font-size: 13px; color: var(--muted); }
+  #roomChip b { color: var(--text); letter-spacing: 2px; }
+
+  .card { width: 100%; max-width: 420px; background: var(--card); border: 1px solid var(--line);
+          border-radius: 14px; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+  .label { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .8px; margin-top: 4px; }
+  .hint { font-size: 13px; color: var(--muted); line-height: 1.4; }
+  .err { font-size: 14px; color: var(--err); min-height: 18px; }
+  .row { display: flex; gap: 8px; }
+  input { flex: 1; min-width: 0; background: var(--bg); color: var(--text); border: 1px solid var(--line);
+          border-radius: 10px; padding: 11px 12px; font-size: 16px; }
+  input:focus { outline: 2px solid var(--btn-on); border-color: transparent; }
+  button { font: inherit; border: 0; border-radius: 10px; padding: 11px 14px; background: var(--btn);
+           color: var(--text); cursor: pointer; }
+  button:disabled { cursor: default; opacity: .55; }
+  button.primary { background: var(--accent); color: #062411; font-weight: 700; font-size: 16px; padding: 13px; }
+  button.link { background: none; color: var(--muted); text-decoration: underline; padding: 6px; }
+  .or { text-align: center; color: var(--muted); font-size: 13px; }
+
+  .roomrow { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+  .code { font-size: 40px; font-weight: 800; letter-spacing: 6px; font-variant-numeric: tabular-nums; }
+  #qr { background: #fff; padding: 6px; border-radius: 8px; line-height: 0; }
+  #qr:empty { display: none; }
+  #qr img, #qr canvas { width: 96px; height: 96px; }
+
+  ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+  li { display: flex; align-items: center; gap: 10px; background: var(--bg); border-radius: 10px; padding: 9px 12px; }
+  .dot { width: 14px; height: 14px; border-radius: 4px; flex: none; }
+  li .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  li .tag { font-size: 12px; color: var(--muted); }
+  li .num { font-variant-numeric: tabular-nums; font-weight: 700; }
+
+  .seg { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 6px; }
+  .seg button { padding: 10px 6px; font-size: 14px; }
+  .seg button.on { background: var(--btn-on); outline: 2px solid var(--accent); outline-offset: -2px; }
+
+  #results { background: var(--bg); border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+  #results .title { font-size: 18px; font-weight: 700; }
+
+  #game { display: flex; flex-direction: column; align-items: center; gap: 8px; width: 100%; }
+  #hud { width: 100%; max-width: 520px; display: flex; justify-content: space-between; align-items: center; gap: 8px; min-height: 30px; }
+  #chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { display: flex; align-items: center; gap: 6px; background: var(--card); border-radius: 999px;
+          padding: 4px 10px 4px 6px; font-size: 13px; }
+  .chip.dead { opacity: .4; }
+  .chip.me { outline: 1px solid var(--muted); }
+  .chip b { font-variant-numeric: tabular-nums; }
+  #timer { font-variant-numeric: tabular-nums; font-weight: 700; font-size: 16px; white-space: nowrap; }
+
+  #wrap { position: relative; touch-action: none; user-select: none; -webkit-user-select: none; }
   canvas { display: block; border-radius: 10px; background: var(--board); }
-  #overlay {
-    position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
-    gap: 10px; background: rgba(16, 20, 26, .72); border-radius: 10px; text-align: center; padding: 16px; cursor: pointer;
-  }
-  #overlay.hidden { display: none; }
-  #overlay .big { font-size: 26px; font-weight: 700; }
-  #overlay .small { color: var(--muted); font-size: 14px; line-height: 1.5; }
-  #status { font-size: 12px; color: var(--muted); min-height: 16px; }
-  #status.bad { color: var(--food); }
-  #pad { display: none; grid-template-columns: repeat(3, 64px); grid-template-rows: repeat(2, 56px); gap: 8px; }
-  #pad button {
-    border: 0; border-radius: 12px; background: var(--btn); color: var(--text); font-size: 22px; touch-action: none;
-  }
-  #pad button:active, #pad button.on { background: var(--btn-active); }
+  #msg { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+         gap: 8px; text-align: center; padding: 16px; pointer-events: none; }
+  #msg.dim { background: rgba(16, 20, 26, .6); border-radius: 10px; }
+  #msg .big { font-size: 30px; font-weight: 800; text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  #msg .big.huge { font-size: 72px; }
+  #msg .small { color: var(--text); font-size: 15px; opacity: .85; text-shadow: 0 1px 6px rgba(0,0,0,.7); }
+
+  #pad { display: none; grid-template-columns: repeat(3, 64px); grid-template-rows: repeat(2, 54px); gap: 8px; }
+  #pad button { font-size: 22px; touch-action: none; padding: 0; }
   #pad .up { grid-column: 2; grid-row: 1; }
   #pad .left { grid-column: 1; grid-row: 2; }
   #pad .down { grid-column: 2; grid-row: 2; }
   #pad .right { grid-column: 3; grid-row: 2; }
   @media (pointer: coarse) { #pad { display: grid; } }
+  #status { font-size: 12px; color: var(--muted); min-height: 16px; }
+  #status.bad { color: var(--err); }
 </style>
 </head>
 <body>
   <header>
     <h1>Snake</h1>
-    <div class="scores">
-      <div><span>Score</span><b id="score">0</b></div>
-      <div><span>Best</span><b id="best">0</b></div>
-    </div>
+    <div id="roomChip" class="hidden">Room <b id="chipCode"></b></div>
   </header>
 
-  <div id="wrap">
-    <canvas id="board"></canvas>
-    <div id="overlay">
-      <div class="big" id="ovTitle">Snake</div>
-      <div class="small" id="ovText">Tap or press Space to start<br>Swipe or use arrow keys to steer</div>
+  <!-- ============ HOME ============ -->
+  <section id="home" class="card">
+    <div class="label">Your name</div>
+    <input id="inName" maxlength="12" placeholder="e.g. Arnaldo" autocomplete="off">
+    <button id="btnCreate" class="primary">Create a room</button>
+    <div class="or">or join a friend's room</div>
+    <div class="row">
+      <input id="inCode" maxlength="4" placeholder="CODE" autocomplete="off" autocapitalize="characters"
+             style="text-transform: uppercase; letter-spacing: 4px; text-align: center;">
+      <button id="btnJoin">Join</button>
     </div>
-  </div>
+    <div id="homeErr" class="err"></div>
+  </section>
 
-  <div id="pad">
-    <button class="up" data-dir="up" aria-label="Up">&#9650;</button>
-    <button class="left" data-dir="left" aria-label="Left">&#9664;</button>
-    <button class="down" data-dir="down" aria-label="Down">&#9660;</button>
-    <button class="right" data-dir="right" aria-label="Right">&#9654;</button>
-  </div>
+  <!-- ============ LOBBY ============ -->
+  <section id="lobby" class="card hidden">
+    <div class="roomrow">
+      <div>
+        <div class="label">Room code</div>
+        <div id="lbCode" class="code"></div>
+      </div>
+      <div id="qr" title="Scan to join"></div>
+    </div>
+    <div class="row">
+      <input id="lbLink" readonly>
+      <button id="btnCopy">Copy</button>
+      <button id="btnShare" class="hidden">Share</button>
+    </div>
+
+    <div id="results" class="hidden">
+      <div class="title" id="resTitle"></div>
+      <ul id="resList"></ul>
+    </div>
+
+    <div class="label">Players <span id="lbCount"></span></div>
+    <ul id="lbPlayers"></ul>
+
+    <div class="label">Game mode</div>
+    <div class="seg" data-set="mode">
+      <button data-val="rounds">Last snake standing</button>
+      <button data-val="endless">Free-for-all</button>
+    </div>
+    <div class="hint" id="modeHint"></div>
+
+    <div id="durBox">
+      <div class="label">Duration</div>
+      <div class="seg" data-set="duration">
+        <button data-val="60">1 min</button>
+        <button data-val="120">2 min</button>
+        <button data-val="180">3 min</button>
+      </div>
+    </div>
+
+    <div class="label">Speed</div>
+    <div class="seg" data-set="speed">
+      <button data-val="slow">Slow</button>
+      <button data-val="normal">Normal</button>
+      <button data-val="fast">Fast</button>
+    </div>
+
+    <button id="btnStart" class="primary">Start</button>
+    <div id="lbWait" class="hint" style="text-align:center"></div>
+    <button id="btnLeave" class="link">Leave room</button>
+  </section>
+
+  <!-- ============ GAME ============ -->
+  <section id="game" class="hidden">
+    <div id="hud"><div id="chips"></div><div id="timer"></div></div>
+    <div id="wrap">
+      <canvas id="board"></canvas>
+      <div id="msg" class="hidden"><div class="big" id="msgBig"></div><div class="small" id="msgSmall"></div></div>
+    </div>
+    <div id="pad">
+      <button class="up" data-dir="up" aria-label="Up">&#9650;</button>
+      <button class="left" data-dir="left" aria-label="Left">&#9664;</button>
+      <button class="down" data-dir="down" aria-label="Down">&#9660;</button>
+      <button class="right" data-dir="right" aria-label="Right">&#9654;</button>
+    </div>
+  </section>
 
   <div id="status">Connecting…</div>
 
 <script>
 (() => {
-  const canvas = document.getElementById("board");
-  const ctx = canvas.getContext("2d");
-  const wrap = document.getElementById("wrap");
-  const overlay = document.getElementById("overlay");
-  const ovTitle = document.getElementById("ovTitle");
-  const ovText = document.getElementById("ovText");
-  const scoreEl = document.getElementById("score");
-  const bestEl = document.getElementById("best");
-  const statusEl = document.getElementById("status");
+  const $ = id => document.getElementById(id);
+  const canvas = $("board"), ctx = canvas.getContext("2d");
   const css = getComputedStyle(document.documentElement);
-  const color = name => css.getPropertyValue(name).trim();
+  const color = n => css.getPropertyValue(n).trim();
+  const esc = s => String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
-  let state = null;
+  const MODE_HINT = {
+    rounds: "Crash and you're out until the next round. The last snake alive wins.",
+    endless: "Crash and you're back after 3 seconds. Highest score when time runs out wins.",
+  };
+
   let ws = null;
-  let best = 0;
-  try { best = parseInt(localStorage.getItem("snake.best") || "0", 10) || 0; } catch (e) {}
-  bestEl.textContent = best;
+  let me = null;          // my player id
+  let code = null;        // room I'm in (also used to rejoin after a dropped connection)
+  let st = null;          // latest room state from the server
+  let holdUntil = 0;      // keep the board visible briefly after a match ends
+  let qrFor = null;
+
+  // ---------------------------------------------------------- storage
+  const store = {
+    get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
+    set(k, v) { try { localStorage.setItem(k, v); } catch (e) {} },
+  };
+  $("inName").value = store.get("snake.name") || "";
+  const urlRoom = new URLSearchParams(location.search).get("room");
+  if (urlRoom) $("inCode").value = urlRoom.toUpperCase().slice(0, 4);
 
   // ---------------------------------------------------------- connection
   function connect() {
     const proto = location.protocol === "https:" ? "wss" : "ws";
     ws = new WebSocket(`${proto}://${location.host}/ws`);
-    ws.onopen = () => { statusEl.textContent = ""; statusEl.className = ""; };
-    ws.onmessage = ev => {
-      const msg = JSON.parse(ev.data);
-      if (msg.type === "state") { state = msg; render(); }
+    ws.onopen = () => {
+      setStatus("");
+      if (code) send({ type: "join", code, name: myName() });   // rejoin after a drop
     };
+    ws.onmessage = ev => handle(JSON.parse(ev.data));
     ws.onclose = () => {
-      statusEl.textContent = "Disconnected — reconnecting…";
-      statusEl.className = "bad";
+      me = null;
+      setStatus(code ? "Connection lost – rejoining…" : "Disconnected – reconnecting…", true);
       setTimeout(connect, 1500);
+      update();
     };
   }
   function send(obj) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(obj)); }
-  const turn = dir => send({ type: "dir", dir });
-  const start = () => { if (state && !state.running) send({ type: "start" }); };
+  function setStatus(text, bad) { $("status").textContent = text; $("status").className = bad ? "bad" : ""; }
+  function myName() { return $("inName").value.trim(); }
 
-  // ---------------------------------------------------------- drawing
+  function handle(msg) {
+    if (msg.type === "joined") {
+      me = msg.you; code = msg.code;
+      $("homeErr").textContent = "";
+      history.replaceState(null, "", `?room=${code}`);
+    } else if (msg.type === "error") {
+      $("homeErr").textContent = msg.msg;
+      if (!me) { code = null; history.replaceState(null, "", location.pathname); }
+    } else if (msg.type === "state") {
+      if (st && st.state === "playing" && msg.state === "lobby" && msg.results) {
+        holdUntil = Date.now() + 2200;
+        setTimeout(update, 2250);
+      }
+      st = msg;
+    }
+    update();
+  }
+
+  // ---------------------------------------------------------- screens
+  function screen() {
+    if (!me || !st) return "home";
+    if (st.state === "lobby" && Date.now() >= holdUntil) return "lobby";
+    return "game";
+  }
+
+  function update() {
+    const s = screen();
+    $("home").classList.toggle("hidden", s !== "home");
+    $("lobby").classList.toggle("hidden", s !== "lobby");
+    $("game").classList.toggle("hidden", s !== "game");
+    $("roomChip").classList.toggle("hidden", s === "home");
+    if (s !== "home" && st) $("chipCode").textContent = st.code;
+    if (s === "lobby") renderLobby();
+    if (s === "game") { resize(); renderGame(); }
+  }
+
+  // ---------------------------------------------------------- lobby
+  function shareLink() { return `${location.origin}${location.pathname}?room=${st.code}`; }
+
+  function renderLobby() {
+    const isHost = st.host === me;
+    $("lbCode").textContent = st.code;
+    $("lbLink").value = shareLink();
+    $("btnShare").classList.toggle("hidden", !navigator.share);
+
+    if (qrFor !== st.code && window.QRCode) {
+      $("qr").innerHTML = "";
+      new QRCode($("qr"), { text: shareLink(), width: 192, height: 192, correctLevel: QRCode.CorrectLevel.M });
+      qrFor = st.code;
+    }
+
+    // last match results
+    const r = st.results;
+    $("results").classList.toggle("hidden", !r);
+    if (r) {
+      $("resTitle").textContent = r.title;
+      $("resList").innerHTML = r.ranking.map((p, i) => `
+        <li><span class="dot" style="background:${p.color}"></span>
+            <span class="name">${i + 1}. ${esc(p.name)}${p.id === me ? ' <span class="tag">(you)</span>' : ""}</span>
+            <span class="num">${p.score}</span></li>`).join("");
+    }
+
+    // players
+    $("lbCount").textContent = `(${st.players.length}/${st.max})`;
+    $("lbPlayers").innerHTML = st.players.map(p => `
+      <li><span class="dot" style="background:${p.color}"></span>
+          <span class="name">${esc(p.name)}${p.id === me ? ' <span class="tag">(you)</span>' : ""}</span>
+          ${p.id === st.host ? '<span class="tag">host</span>' : ""}
+          ${p.wins ? `<span class="tag">${p.wins} win${p.wins > 1 ? "s" : ""}</span>` : ""}</li>`).join("");
+
+    // settings
+    const cur = { mode: st.mode, duration: String(st.duration), speed: st.speed };
+    document.querySelectorAll(".seg").forEach(seg => {
+      seg.querySelectorAll("button").forEach(b => {
+        b.classList.toggle("on", b.dataset.val === cur[seg.dataset.set]);
+        b.disabled = !isHost;
+      });
+    });
+    $("modeHint").textContent = MODE_HINT[st.mode];
+    $("durBox").classList.toggle("hidden", st.mode !== "endless");
+
+    $("btnStart").classList.toggle("hidden", !isHost);
+    $("btnStart").textContent = st.results ? "Play again" : "Start";
+    $("lbWait").textContent = isHost
+      ? (st.players.length < 2 ? "You can start alone to try it, or wait for friends to join." : "")
+      : "Waiting for the host to start…";
+  }
+
+  document.querySelectorAll(".seg").forEach(seg => {
+    seg.addEventListener("click", e => {
+      const b = e.target.closest("button");
+      if (!b || b.disabled || !st) return;
+      const settings = { type: "settings", mode: st.mode, duration: st.duration, speed: st.speed };
+      settings[seg.dataset.set] = seg.dataset.set === "duration" ? Number(b.dataset.val) : b.dataset.val;
+      send(settings);
+    });
+  });
+
+  $("btnCreate").onclick = () => {
+    if (!myName()) { $("homeErr").textContent = "Type your name first."; $("inName").focus(); return; }
+    store.set("snake.name", myName());
+    send({ type: "create", name: myName() });
+  };
+  $("btnJoin").onclick = () => {
+    const c = $("inCode").value.trim().toUpperCase();
+    if (!myName()) { $("homeErr").textContent = "Type your name first."; $("inName").focus(); return; }
+    if (c.length !== 4) { $("homeErr").textContent = "The room code has 4 characters."; $("inCode").focus(); return; }
+    store.set("snake.name", myName());
+    send({ type: "join", code: c, name: myName() });
+  };
+  $("inCode").addEventListener("keydown", e => { if (e.key === "Enter") $("btnJoin").click(); });
+  $("inName").addEventListener("keydown", e => {
+    if (e.key === "Enter") ($("inCode").value.trim() ? $("btnJoin") : $("btnCreate")).click();
+  });
+  $("btnStart").onclick = () => send({ type: "start" });
+  $("btnLeave").onclick = () => {
+    code = null; me = null; st = null;
+    history.replaceState(null, "", location.pathname);
+    send({ type: "leave" });
+    update();
+  };
+  $("btnCopy").onclick = async () => {
+    try { await navigator.clipboard.writeText(shareLink()); }
+    catch (e) { $("lbLink").select(); document.execCommand("copy"); }
+    $("btnCopy").textContent = "Copied";
+    setTimeout(() => { $("btnCopy").textContent = "Copy"; }, 1500);
+  };
+  $("btnShare").onclick = () => {
+    navigator.share({ title: "Snake", text: `Join my Snake room ${st.code}`, url: shareLink() }).catch(() => {});
+  };
+
+  // ---------------------------------------------------------- game drawing
   let cell = 20;
   function resize() {
-    const w = state ? state.w : 20, h = state ? state.h : 20;
-    const padH = matchMedia("(pointer: coarse)").matches ? 140 : 0;
+    if (!st) return;
+    const padH = matchMedia("(pointer: coarse)").matches ? 135 : 0;
     const availW = Math.min(window.innerWidth - 32, 520);
-    const availH = window.innerHeight - 110 - padH;
-    cell = Math.max(8, Math.floor(Math.min(availW / w, availH / h)));
+    const availH = window.innerHeight - 120 - padH;
+    const c = Math.max(8, Math.floor(Math.min(availW / st.w, availH / st.h)));
+    if (c === cell && canvas.width) return;
+    cell = c;
     const dpr = window.devicePixelRatio || 1;
-    canvas.style.width = cell * w + "px";
-    canvas.style.height = cell * h + "px";
-    canvas.width = cell * w * dpr;
-    canvas.height = cell * h * dpr;
+    canvas.style.width = cell * st.w + "px";
+    canvas.style.height = cell * st.h + "px";
+    canvas.width = cell * st.w * dpr;
+    canvas.height = cell * st.h * dpr;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    render();
+  }
+
+  function lighten(hex, amt) {
+    const n = parseInt(hex.slice(1), 16);
+    const mix = v => Math.round(v + (255 - v) * amt);
+    return `rgb(${mix(n >> 16)},${mix((n >> 8) & 255)},${mix(n & 255)})`;
   }
 
   function roundRect(x, y, s, r) {
@@ -147,76 +402,110 @@
     ctx.fill();
   }
 
-  function render() {
-    if (!state) return;
-    const { w, h, snake, food } = state;
+  function renderGame() {
+    const { w, h } = st;
     ctx.fillStyle = color("--board");
     ctx.fillRect(0, 0, w * cell, h * cell);
-
-    // checkerboard
     ctx.fillStyle = color("--grid");
     for (let y = 0; y < h; y++)
-      for (let x = (y % 2); x < w; x += 2)
+      for (let x = y % 2; x < w; x += 2)
         ctx.fillRect(x * cell, y * cell, cell, cell);
 
-    // food
-    if (food) {
-      ctx.fillStyle = color("--food");
+    ctx.fillStyle = color("--food");
+    for (const [fx, fy] of st.food) {
       ctx.beginPath();
-      ctx.arc((food[0] + .5) * cell, (food[1] + .5) * cell, cell * .36, 0, Math.PI * 2);
+      ctx.arc((fx + .5) * cell, (fy + .5) * cell, cell * .34, 0, Math.PI * 2);
       ctx.fill();
     }
 
-    // snake
     const gap = Math.max(1, cell * .08);
-    snake.forEach(([x, y], i) => {
-      ctx.fillStyle = i === 0 ? color("--head") : color("--snake");
-      roundRect(x * cell + gap, y * cell + gap, cell - gap * 2, cell * .28);
-    });
-
-    // eyes
-    if (snake.length) {
-      const [hx, hy] = snake[0];
-      const d = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] }[state.dir];
-      const cx = (hx + .5) * cell, cy = (hy + .5) * cell;
-      const off = cell * .2, fwd = cell * .12;
+    const D = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] };
+    // others first, my snake on top
+    const order = [...st.players].sort((a, b) => (a.id === me) - (b.id === me));
+    for (const p of order) {
+      if (!p.body.length) continue;
+      p.body.forEach(([x, y], i) => {
+        ctx.fillStyle = i === 0 ? lighten(p.color, .45) : p.color;
+        roundRect(x * cell + gap, y * cell + gap, cell - gap * 2, cell * .28);
+      });
+      const [hx, hy] = p.body[0];
+      const d = D[p.dir];
+      const cx = (hx + .5) * cell, cy = (hy + .5) * cell, off = cell * .2, fwd = cell * .12;
       ctx.fillStyle = color("--bg");
       for (const s of [-1, 1]) {
-        const ex = cx + d[0] * fwd + (d[1] !== 0 ? s * off : 0);
-        const ey = cy + d[1] * fwd + (d[0] !== 0 ? s * off : 0);
-        ctx.beginPath(); ctx.arc(ex, ey, cell * .08, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath();
+        ctx.arc(cx + d[0] * fwd + (d[1] ? s * off : 0), cy + d[1] * fwd + (d[0] ? s * off : 0), cell * .08, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      // name tag above the head
+      if (cell >= 12 && st.players.length > 1) {
+        ctx.font = `600 ${Math.max(10, Math.round(cell * .55))}px system-ui, sans-serif`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "bottom";
+        ctx.fillStyle = p.id === me ? "#ffffff" : lighten(p.color, .3);
+        const ty = hy > 0 ? hy * cell - 2 : (hy + 1) * cell + cell * .75;
+        ctx.fillText(p.id === me ? "you" : p.name, cx, ty);
       }
     }
 
-    // score + overlay
-    scoreEl.textContent = state.score;
-    if (state.score > best) {
-      best = state.score; bestEl.textContent = best;
-      try { localStorage.setItem("snake.best", best); } catch (e) {}
-    }
-    if (state.running) {
-      overlay.classList.add("hidden");
+    // HUD
+    const sorted = [...st.players].sort((a, b) => b.score - a.score);
+    $("chips").innerHTML = sorted.map(p => {
+      const out = st.state !== "lobby" && !p.alive;
+      return `<span class="chip${out ? " dead" : ""}${p.id === me ? " me" : ""}">
+        <span class="dot" style="background:${p.color}"></span>${esc(p.name)} <b>${p.score}</b></span>`;
+    }).join("");
+    if (st.mode === "endless" && st.time_left != null) {
+      const t = st.time_left;
+      $("timer").textContent = `${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")}`;
+    } else if (st.mode === "rounds" && st.state === "playing") {
+      const inRound = st.players.filter(p => p.in_round);
+      $("timer").textContent = inRound.length > 1 ? `${inRound.filter(p => p.alive).length}/${inRound.length} alive` : "";
     } else {
-      overlay.classList.remove("hidden");
-      if (state.won) { ovTitle.textContent = "You filled the board!"; ovText.innerHTML = "Tap or press Space to play again"; }
-      else if (!state.alive) { ovTitle.textContent = `Game over — ${state.score}`; ovText.innerHTML = "Tap or press Space to play again"; }
+      $("timer").textContent = "";
     }
+
+    // centre message
+    let big = "", small = "", huge = false, dim = false;
+    const mine = st.players.find(p => p.id === me);
+    if (st.state === "countdown") {
+      big = st.countdown; huge = true;
+      small = st.mode === "rounds" ? "Last snake standing" : `Free-for-all · ${st.duration / 60} min`;
+    } else if (st.state === "lobby" && st.results) {
+      big = st.results.title; dim = true;
+    } else if (st.state === "playing" && mine && !mine.alive) {
+      if (st.mode === "endless") {
+        big = "Crashed!";
+        small = mine.respawn != null ? `Back in ${Math.max(0, mine.respawn).toFixed(1)} s` : "Back in a moment";
+      } else if (mine.in_round) {
+        big = "You're out"; small = "Watching the others…"; dim = true;
+      } else {
+        big = "Round in progress"; small = "You'll play in the next round"; dim = true;
+      }
+    }
+    $("msg").classList.toggle("hidden", !big);
+    $("msg").classList.toggle("dim", dim);
+    $("msgBig").textContent = big;
+    $("msgBig").classList.toggle("huge", huge);
+    $("msgSmall").textContent = small;
   }
 
   // ---------------------------------------------------------- input
+  const turn = dir => send({ type: "dir", dir });
   const KEYS = {
     ArrowUp: "up", ArrowDown: "down", ArrowLeft: "left", ArrowRight: "right",
     w: "up", s: "down", a: "left", d: "right", W: "up", S: "down", A: "left", D: "right",
   };
   window.addEventListener("keydown", e => {
-    if (KEYS[e.key]) { e.preventDefault(); turn(KEYS[e.key]); }
-    else if (e.key === " " || e.key === "Enter") { e.preventDefault(); start(); }
+    if (e.target.tagName === "INPUT") return;
+    if (screen() === "game" && KEYS[e.key]) { e.preventDefault(); turn(KEYS[e.key]); }
+    else if ((e.key === " " || e.key === "Enter") && screen() === "lobby" && st.host === me) {
+      e.preventDefault(); send({ type: "start" });
+    }
   });
 
-  overlay.addEventListener("click", start);
-
-  // swipe: fires as soon as the finger has moved far enough, so quick
-  // zig-zags register without lifting the finger
+  // swipe: fires as soon as the finger has moved far enough
+  const wrap = $("wrap");
   let sx = 0, sy = 0, tracking = false;
   wrap.addEventListener("touchstart", e => {
     const t = e.touches[0]; sx = t.clientX; sy = t.clientY; tracking = true;
@@ -230,19 +519,14 @@
     sx = t.clientX; sy = t.clientY;
   }, { passive: false });
   wrap.addEventListener("touchend", () => { tracking = false; });
-
   document.querySelectorAll("#pad button").forEach(b => {
-    b.addEventListener("pointerdown", e => {
-      e.preventDefault();
-      if (state && !state.running) start(); else turn(b.dataset.dir);
-    });
+    b.addEventListener("pointerdown", e => { e.preventDefault(); turn(b.dataset.dir); });
   });
 
-  window.addEventListener("resize", resize);
+  window.addEventListener("resize", () => { cell = 0; update(); });
+  window.addEventListener("load", () => { if (screen() === "lobby") { qrFor = null; renderLobby(); } });
   connect();
-  resize();
-  // first state message knows the grid size
-  const once = setInterval(() => { if (state) { resize(); clearInterval(once); } }, 100);
+  update();
 })();
 </script>
 </body>
