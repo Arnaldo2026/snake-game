@@ -34,7 +34,9 @@ from games import DEFAULT_GAME, GAMES
 NAME_MAX = 12
 COLORS = ["#4ade80", "#60a5fa", "#fb923c", "#f472b6", "#facc15", "#a78bfa", "#2dd4bf", "#f87171"]
 CODE_CHARS = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"           # no 0/O, 1/I/L
-CATALOG = [{"id": g.id, "name": g.name, "max": g.max_players} for g in GAMES.values()]
+# each game has a picture at static/games/<id>.svg for the home screen
+CATALOG = [{"id": g.id, "name": g.name, "max": g.max_players,
+            "image": f"/static/games/{g.id}.svg"} for g in GAMES.values()]
 
 HERE = Path(__file__).resolve().parent
 STATIC = HERE / "static"

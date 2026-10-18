@@ -11,9 +11,10 @@
   for (let i = 0; i < 90; i++) field.push([rnd() * 1000, rnd() * 1000, rnd() < .15 ? 1.6 : 0.9]);
 
   function resize(api) {
-    const padH = matchMedia("(pointer: coarse)").matches ? 135 : 0;
+    // room for header + scoreboard, and below the board either the touch buttons or the keys hint
+    const reserve = matchMedia("(pointer: coarse)").matches ? 255 : 170;
     const availW = Math.min(window.innerWidth - 32, 960);
-    const availH = window.innerHeight - 125 - padH;
+    const availH = window.innerHeight - reserve;
     const s = Math.max(240, Math.floor(Math.min(availW, availH)));
     const key = `${s}:${window.devicePixelRatio || 1}`;
     if (key === sizedFor) return;
@@ -79,9 +80,34 @@
     ctx.restore();
   }
 
+  // irregular vector rock, same shape on every screen (seeded)
+  function drawRock(ctx, rock) {
+    const [x, y, r, seedR, rot] = rock;
+    let s = seedR;
+    const rand = () => (s = (s * 16807) % 2147483647) / 2147483647;
+    const n = 9;
+    ctx.save();
+    ctx.translate(x * scale, y * scale);
+    ctx.rotate(rot);
+    ctx.strokeStyle = "#cbd5e1";
+    ctx.shadowColor = "#94a3b8";
+    ctx.shadowBlur = 6;
+    ctx.lineWidth = Math.max(1.3, 1.8 * scale);
+    ctx.beginPath();
+    for (let i = 0; i < n; i++) {
+      const ang = i * Math.PI * 2 / n, rr = r * (0.72 + rand() * 0.38) * scale;
+      const px = Math.cos(ang) * rr, py = Math.sin(ang) * rr;
+      i ? ctx.lineTo(px, py) : ctx.moveTo(px, py);
+    }
+    ctx.closePath();
+    ctx.stroke();
+    ctx.restore();
+  }
+
   function drawBoom(ctx, b) {
-    const [x, y, age] = b;
+    const [x, y, age, kind] = b;
     const k = Math.min(1, age / 1.2);
+    const spread = kind === "rock" ? 0.7 : 1;
     ctx.save();
     ctx.globalAlpha = 1 - k;
     ctx.strokeStyle = "#ffffff";
@@ -92,7 +118,7 @@
     const r = () => (s = (s * 16807) % 2147483647) / 2147483647;
     ctx.beginPath();
     for (let i = 0; i < 12; i++) {
-      const ang = r() * Math.PI * 2, sp = 40 + r() * 70;
+      const ang = r() * Math.PI * 2, sp = (40 + r() * 70) * spread;
       const d1 = sp * k, d2 = d1 + 6 + r() * 10;
       ctx.moveTo((x + Math.cos(ang) * d1) * scale, (y + Math.sin(ang) * d1) * scale);
       ctx.lineTo((x + Math.cos(ang) * d2) * scale, (y + Math.sin(ang) * d2) * scale);
@@ -113,6 +139,7 @@
     for (const [x, y, r] of field) ctx.fillRect(x * scale, y * scale, r, r);
 
     if (g.star) drawStar(ctx, g, t);
+    for (const rock of g.rocks || []) drawRock(ctx, rock);
 
     // torpedoes
     for (const [x, y, owner] of g.torps) {
@@ -152,16 +179,26 @@
       return `<span class="chip${dead ? " dead" : ""}${s.id === me ? " me" : ""}">
         <span class="dot" style="background:${p.color}"></span>${api.esc(p.name)} <b>${s.points}</b></span>`;
     }).join("");
-    api.$("timer").textContent = g.round ? `Round ${g.round} · first to ${g.target}` : "";
+    const mine = g.ships.find(s => s.id === me);
+    if (g.solo) {
+      const s = mine || g.ships[0];
+      api.$("chips").innerHTML = "";
+      api.$("timer").textContent = s
+        ? `Training${g.rocks_on ? ` · asteroids ${s.points}` : ""} · crashes ${s.deaths}` : "Training";
+    } else {
+      api.$("timer").textContent = g.round ? `Round ${g.round} · first to ${g.target}` : "";
+    }
 
     // centre message
     let big = "", small = "", huge = false, dim = false;
-    const mine = g.ships.find(s => s.id === me);
     if (st.state === "lobby" && st.results) {
       big = st.results.title; dim = true;
     } else if (g.phase === "countdown") {
       big = g.countdown; huge = true;
-      small = `Round ${g.round}`;
+      small = g.solo ? "Training – fly, shoot, beat the gravity. Exit when you're done." : `Round ${g.round}`;
+    } else if (g.solo && mine && !mine.alive) {
+      big = "Crashed!";
+      small = mine.respawn != null ? `Back in ${mine.respawn.toFixed(1)} s` : "";
     } else if (g.phase === "roundover") {
       big = g.round_msg;
       small = g.round_winner === me ? "Nice flying!" : "";
@@ -185,8 +222,12 @@
       const key = `${b[0]},${b[1]}`;
       if (seen.has(key) || b[2] > .4) continue;
       seen.add(key);
-      api.tone(160, 0, .55, "sawtooth", .09, 30);                       // boom
-      api.tone(90, .02, .6, "square", .05, 25);
+      if (b[3] === "rock") {
+        api.tone(240, 0, .3, "sawtooth", .05, 60);                      // rock breaks
+      } else {
+        api.tone(160, 0, .55, "sawtooth", .09, 30);                     // ship explodes
+        api.tone(90, .02, .6, "square", .05, 25);
+      }
       const mine = (ng.ships || []).find(s => s.id === me);
       if (mine && !mine.alive && Math.abs(mine.x - b[0]) < 1 && Math.abs(mine.y - b[1]) < 1) crashed = true;
     }
@@ -204,6 +245,7 @@
 
   function liveInfo(st) {
     const g = st.game;
+    if (g.solo) return "training";
     return g.round ? `round ${g.round}, first to ${g.target}` : "starting";
   }
 

@@ -8,6 +8,10 @@ The star pulls ships in (or pushes them away with negative gravity) and
 destroys anything that touches it. The last ship flying wins the round;
 the first to the target number of rounds wins the match.
 
+Alone in the room it becomes training: free flight with respawns, until the
+player exits. Optional asteroids (a few, set by the host) bounce off the
+borders, feel the star's gravity, can be shot and destroy ships they hit.
+
 Same interface as games/snake.py. Inputs: {"key": <name>, "down": bool}
 with key one of left, right, thrust, fire, hyper (held-button controls).
 """
@@ -36,6 +40,11 @@ NEXT_ROUND = 2.0               # countdown before later rounds
 ROUND_PAUSE = 2.5              # after a round ends, before the next countdown
 BOOM_LIFE = 1.2
 SPAWN_R = 380
+TRAIN_RESPAWN = 2.0            # training: back in flight after a crash
+ROCK_R = (22, 34)              # asteroid radius range
+ROCK_SPEED = (45, 90)
+ROCK_GRAVITY = 0.45            # asteroids feel less pull than ships
+ROCK_RESPAWN = 3.0             # a destroyed asteroid is replaced after this
 
 GRAVITY = {"off": 0.0, "weak": 2.5e6, "normal": 5e6, "strong": 1e7, "negative": -4e6}
 KEYS = ("left", "right", "thrust", "fire", "hyper")
@@ -55,7 +64,9 @@ class Ship:
         self.fire_cd = 0.0
         self.hyper_cd = 0.0
         self.hyper_until = 0.0     # > now while in hyperspace
-        self.points = 0
+        self.points = 0            # rounds won (training: asteroids destroyed)
+        self.deaths = 0            # training: crashes
+        self.respawn_at = 0.0      # training: when to fly again
 
 
 class Torp:
@@ -63,6 +74,24 @@ class Torp:
 
     def __init__(self, x, y, vx, vy, born, owner):
         self.x, self.y, self.vx, self.vy, self.born, self.owner = x, y, vx, vy, born, owner
+
+
+class Rock:
+    __slots__ = ("x", "y", "vx", "vy", "r", "seed", "rot", "spin")
+
+    def __init__(self):
+        self.r = random.uniform(*ROCK_R)
+        self.seed = random.randrange(1, 100000)      # the browser draws its shape from this
+        self.rot = random.uniform(0, math.tau)
+        self.spin = random.uniform(-0.8, 0.8)
+        # enter from a random border, heading roughly inwards
+        side = random.randrange(4)
+        t = random.uniform(80, W - 80)
+        self.x, self.y = [(t, self.r), (W - self.r, t), (t, W - self.r), (self.r, t)][side]
+        # aimed past the star, not at it, so they swing around before falling in
+        ang = math.atan2(CY - self.y, CX - self.x) + random.choice((-1, 1)) * random.uniform(0.6, 1.1)
+        sp = random.uniform(*ROCK_SPEED)
+        self.vx, self.vy = math.cos(ang) * sp, math.sin(ang) * sp
 
 
 class SpaceWarsGame:
@@ -83,8 +112,16 @@ class SpaceWarsGame:
         {"key": "hyperspace", "label": "Hyperspace", "default": "on",
          "options": [["on", "On"], ["off", "Off"]],
          "hints": {"on": "Jump to a random spot – sometimes your ship explodes instead."}},
+        {"key": "asteroids", "label": "Asteroids", "default": 0,
+         "options": [[0, "None"], [2, "2"], [4, "4"], [6, "6"]],
+         "hints": {2: "They bounce off the borders, fall into the star, can be shot – and wreck any ship they hit.",
+                   4: "They bounce off the borders, fall into the star, can be shot – and wreck any ship they hit.",
+                   6: "They bounce off the borders, fall into the star, can be shot – and wreck any ship they hit."}},
         {"key": "target", "label": "Match", "default": 5,
-         "options": [[3, "First to 3"], [5, "First to 5"], [10, "First to 10"]]},
+         "options": [[3, "First to 3"], [5, "First to 5"], [10, "First to 10"]],
+         "hints": {3: "Playing alone? You get free-flight training instead, until you press Exit.",
+                   5: "Playing alone? You get free-flight training instead, until you press Exit.",
+                   10: "Playing alone? You get free-flight training instead, until you press Exit."}},
     ]
 
     def __init__(self, room):
@@ -100,6 +137,9 @@ class SpaceWarsGame:
         self.round = 0
         self.round_msg = ""
         self.round_winner = None
+        self.solo = False          # training: one player, no rounds
+        self.rocks = []
+        self.rock_due = []         # times at which a replacement asteroid enters
 
     # ------------------------------------------------ settings
     def set_setting(self, key, value):
@@ -129,12 +169,15 @@ class SpaceWarsGame:
             s.in_round = True
             self.ships[pid] = s
         self.round = 0
+        self.solo = len(pids) == 1
         self.running = True
         self.new_round(COUNTDOWN)
 
     def new_round(self, countdown):
         self.round += 1
         self.torps = []
+        self.rocks = [Rock() for _ in range(self.settings["asteroids"])]
+        self.rock_due = []
         self.round_msg = ""
         self.round_winner = None
         players = [s for s in self.ships.values() if s.in_round and not s.out]
@@ -220,7 +263,22 @@ class SpaceWarsGame:
             return
         s.alive = False
         s.keys = set()
+        s.hyper_until = 0.0
         self.booms.append([s.x, s.y, now, kind])
+        if self.solo and not s.out:
+            s.deaths += 1
+            s.respawn_at = now + TRAIN_RESPAWN
+
+    def destroy_rock(self, rock, now, by=None):
+        if rock not in self.rocks:
+            return
+        self.rocks.remove(rock)
+        self.booms.append([rock.x, rock.y, now, "rock"])
+        self.rock_due.append(now + ROCK_RESPAWN)
+        if by is not None and self.solo:
+            s = self.ships.get(by)
+            if s:
+                s.points += 1
 
     def gravity(self, x, y):
         g = self.g
@@ -249,14 +307,53 @@ class SpaceWarsGame:
     def random_spot(self):
         for _ in range(50):
             x, y = random.uniform(60, W - 60), random.uniform(60, W - 60)
-            if math.hypot(x - CX, y - CY) > 180:
+            if math.hypot(x - CX, y - CY) > 180 and \
+                    all(math.hypot(x - r.x, y - r.y) > r.r + 80 for r in self.rocks):
                 return x, y
         return 100.0, 100.0
+
+    def step_rocks(self, now, dt, star):
+        while self.rock_due and now >= self.rock_due[0] and \
+                len(self.rocks) < self.settings["asteroids"]:
+            self.rock_due.pop(0)
+            self.rocks.append(Rock())
+        for rock in list(self.rocks):
+            gx, gy = self.gravity(rock.x, rock.y)
+            rock.vx += gx * ROCK_GRAVITY * dt
+            rock.vy += gy * ROCK_GRAVITY * dt
+            speed = math.hypot(rock.vx, rock.vy)
+            if speed > MAX_SPEED * 0.6:
+                rock.vx *= MAX_SPEED * 0.6 / speed
+                rock.vy *= MAX_SPEED * 0.6 / speed
+            rock.x += rock.vx * dt
+            rock.y += rock.vy * dt
+            rock.rot += rock.spin * dt
+            # asteroids always bounce off the borders
+            if rock.x < rock.r:
+                rock.x, rock.vx = rock.r, abs(rock.vx)
+            elif rock.x > W - rock.r:
+                rock.x, rock.vx = W - rock.r, -abs(rock.vx)
+            if rock.y < rock.r:
+                rock.y, rock.vy = rock.r, abs(rock.vy)
+            elif rock.y > W - rock.r:
+                rock.y, rock.vy = W - rock.r, -abs(rock.vy)
+            if star and math.hypot(rock.x - CX, rock.y - CY) < STAR_R + rock.r * 0.7:
+                self.destroy_rock(rock, now)
 
     def step(self, now):
         dt = DT
         star = self.g != 0
         playing = self.phase == "playing"
+
+        if self.solo:
+            for s in self.ships.values():
+                if not s.alive and not s.out and s.respawn_at and now >= s.respawn_at:
+                    s.x, s.y = self.random_spot()
+                    s.vx = s.vy = 0.0
+                    s.a = math.atan2(CY - s.y, CX - s.x) + math.pi / 2
+                    s.alive, s.respawn_at, s.keys = True, 0.0, set()
+
+        self.step_rocks(now, dt, star)
 
         for s in self.ships.values():
             if not s.alive:
@@ -340,6 +437,24 @@ class SpaceWarsGame:
                         self.torps.remove(t)
                     break
 
+        # torpedoes against asteroids
+        for t in list(self.torps):
+            for rock in self.rocks:
+                if math.hypot(t.x - rock.x, t.y - rock.y) < rock.r:
+                    self.destroy_rock(rock, now, by=t.owner)
+                    self.torps.remove(t)
+                    break
+
+        # asteroids against ships: both are wrecked
+        for s in flying:
+            if not s.alive:
+                continue
+            for rock in self.rocks:
+                if math.hypot(s.x - rock.x, s.y - rock.y) < rock.r + SHIP_R * 0.7:
+                    self.explode(s, now)
+                    self.destroy_rock(rock, now)
+                    break
+
         # ship collisions: both explode
         flying = [s for s in flying if s.alive]
         for i, a in enumerate(flying):
@@ -350,6 +465,11 @@ class SpaceWarsGame:
 
     # ------------------------------------------------ rounds and results
     def check_round(self, now):
+        if self.solo:
+            # training goes on until the player exits (or leaves)
+            if not [s for s in self.ships.values() if not s.out]:
+                self.finish()
+            return
         if self.phase != "playing":
             return
         players = [s for s in self.ships.values() if s.in_round and not s.out]
@@ -367,16 +487,10 @@ class SpaceWarsGame:
         else:
             if alive:
                 return
-            self.round_msg = "Ship destroyed"
+            self.round_msg = f"Round {self.round}: no survivors"
             if not players:
                 self.finish()
                 return
-            # solo practice: one life
-            self.phase = "roundover"
-            self.phase_end = now + ROUND_PAUSE
-            for s in players:
-                s.out = True
-            return
         self.phase = "roundover"
         self.phase_end = now + ROUND_PAUSE
 
@@ -384,8 +498,11 @@ class SpaceWarsGame:
         ships = sorted(self.ships.values(), key=lambda s: -s.points)
         target = self.settings["target"]
         winner = None
-        if len(ships) == 1:
-            title = f"Practice over – {self.round} round{'s' if self.round > 1 else ''} flown"
+        if self.solo:
+            s = ships[0] if ships else None
+            rocks = f"{s.points} asteroid{'s' if s.points != 1 else ''} destroyed, " if s and self.settings["asteroids"] else ""
+            crashes = f"{s.deaths} crash{'es' if s.deaths != 1 else ''}" if s else ""
+            title = f"Training over – {rocks}{crashes}"
         else:
             top = ships[0].points if ships else 0
             leaders = [s for s in ships if s.points == top]
@@ -422,9 +539,13 @@ class SpaceWarsGame:
             "countdown": countdown,
             "round_msg": self.round_msg,
             "round_winner": self.round_winner,
+            "solo": self.solo,
+            "rocks_on": self.settings["asteroids"] > 0,
+            "rocks": [[r(k.x), r(k.y), r(k.r), k.seed, round(k.rot, 2)] for k in self.rocks],
             "ships": [{
                 "id": s.id, "x": r(s.x), "y": r(s.y), "a": round(s.a, 3),
-                "alive": s.alive, "out": s.out, "points": s.points,
+                "alive": s.alive, "out": s.out, "points": s.points, "deaths": s.deaths,
+                "respawn": round(max(0.0, s.respawn_at - now), 1) if s.respawn_at else None,
                 "thrust": s.alive and "thrust" in s.keys and not s.hyper_until,
                 "hyper": bool(s.hyper_until),
             } for s in self.ships.values()],

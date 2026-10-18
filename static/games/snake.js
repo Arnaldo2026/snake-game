@@ -16,9 +16,10 @@
 
   function resize(api, g) {
     const { canvas, ctx } = api;
-    const padH = matchMedia("(pointer: coarse)").matches ? 135 : 0;
+    // room for header + scoreboard, and below the board either the touch buttons or the keys hint
+    const reserve = matchMedia("(pointer: coarse)").matches ? 255 : 170;
     const availW = Math.min(window.innerWidth - 32, 960);
-    const availH = window.innerHeight - 115 - padH;
+    const availH = window.innerHeight - reserve;
     const c = Math.max(8, Math.floor(Math.min(availW / g.w, availH / g.h)));
     const key = `${c}:${g.w}:${g.h}:${window.innerWidth}`;
     if (key === sizedFor) return;

@@ -11,10 +11,11 @@ link, or the QR code.
 | `server.py` | Platform: rooms, players, host, lobby, notices, players arriving mid-match |
 | `games/__init__.py` | Catalog of available games |
 | `games/snake.py` | Snake rules and its lobby settings (runs on the server) |
-| `games/spacewars.py` | Space Wars rules and physics: ships, central star gravity, torpedoes, hyperspace |
+| `games/spacewars.py` | Space Wars rules and physics: ships, star gravity, torpedoes, hyperspace, asteroids, solo training |
 | `static/index.html` | The page: home, lobby, game screen, join prompts, sounds |
 | `static/games/snake.js` | Snake drawing, scoreboard, sounds and controls (runs in the browser) |
 | `static/games/spacewars.js` | Space Wars vector drawing, scoreboard, sounds and controls |
+| `static/games/<id>.svg` | Picture of each game for the home screen |
 
 ## Run locally
 
@@ -31,7 +32,9 @@ Then open http://localhost:8000, or the phone address it prints (same Wi-Fi).
    `render(api)` function, its `controls` (keys and on-screen buttons; `hold: true`
    for press-and-hold controls) and optionally `sounds`, `liveInfo`, `status`.
 
-The new game then appears in the game list, and its settings in the lobby.
+3. Draw a picture for the home screen as `static/games/<id>.svg`.
+
+The new game then appears in the game list and on the home screen, and its settings in the lobby.
 
 ## Deploy
 
