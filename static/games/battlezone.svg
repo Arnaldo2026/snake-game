@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300" preserveAspectRatio="xMidYMid slice">
+  <defs>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="1.4" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <rect width="400" height="300" fill="#000"/>
+  <g fill="none" stroke-linejoin="round" filter="url(#glow)">
+    <!-- mountains and volcano -->
+    <path d="M0 158 L30 146 L52 152 L80 136 L104 148 L128 140 L150 112 L160 110 L170 112 L192 146 L220 138
+             L248 150 L276 132 L300 144 L330 138 L360 150 L400 142" stroke="#2f9e48" stroke-width="1.5"/>
+    <path d="M154 104 L150 92 M160 100 L161 86 M166 104 L172 94" stroke="#5dff7a" stroke-width="1.2"/>
+    <line x1="0" y1="168" x2="400" y2="168" stroke="#5dff7a" stroke-opacity=".6" stroke-width="1.2"/>
+    <!-- pyramid and cube -->
+    <path d="M40 232 L84 214 L118 236 L74 256 Z M40 232 L80 170 L84 214 M80 170 L118 236 M80 170 L74 256"
+          stroke="#5dff7a" stroke-width="1.6"/>
+    <path d="M300 214 L340 214 L340 248 L300 248 Z M300 214 L314 204 L354 204 L340 214 M354 204 L354 238 L340 248"
+          stroke="#5dff7a" stroke-width="1.6"/>
+    <!-- enemy tank -->
+    <g stroke="#5dff7a" stroke-width="1.6">
+      <path d="M196 200 L262 200 L270 186 L188 186 Z M196 200 L188 186"/>
+      <path d="M210 186 L248 186 L244 174 L214 174 Z"/>
+      <path d="M244 180 L282 178"/>
+    </g>
+    <!-- crosshair -->
+    <g stroke="#5dff7a" stroke-width="1.4">
+      <path d="M200 130 L200 150 M200 170 L200 190 M184 150 L184 145 L192 145 M216 150 L216 145 L208 145
+               M184 170 L184 175 L192 175 M216 170 L216 175 L208 175"/>
+    </g>
+  </g>
+  <!-- radar and red text -->
+  <g fill="none" stroke="#ff4d4d" stroke-width="1.4" filter="url(#glow)">
+    <circle cx="200" cy="44" r="32"/><path d="M200 44 L222 22"/>
+  </g>
+  <circle cx="214" cy="56" r="2.6" fill="#ff4d4d"/>
+  <g fill="#ff4d4d" font-family="ui-monospace, Consolas, monospace" font-size="10" font-weight="600">
+    <text x="12" y="22">ENEMY IN RANGE</text>
+    <text x="388" y="22" text-anchor="end">SCORE 012000</text>
+  </g>
+  <!-- the arena map in the corner -->
+  <rect x="12" y="234" width="54" height="54" fill="rgba(0,20,6,.6)" stroke="#2f9e48"/>
+  <g fill="#2f9e48"><rect x="20" y="244" width="4" height="4"/><rect x="44" y="250" width="4" height="4"/>
+    <rect x="30" y="272" width="4" height="4"/><rect x="54" y="266" width="4" height="4"/></g>
+  <path d="M40 262 L33 266 L33 258 Z" fill="#fff"/>
+</svg>

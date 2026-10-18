@@ -145,6 +145,7 @@
     #gallery { top: auto; height: 36vh; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
     .tile + .tile { border-left: 0; }
     .tile { outline: 1px solid var(--line); }
+    .tile:last-child:nth-child(odd) { grid-column: 1 / -1; }   /* odd number of games: last one full width */
     .tile .tname { bottom: 16px; font-size: 18px; letter-spacing: 1px; padding: 0 4px; }
   }
 

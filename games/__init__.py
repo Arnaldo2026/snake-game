@@ -7,9 +7,10 @@ part as static/games/<id>.js.
 """
 
 from .asteroids import AsteroidsGame
+from .battlezone import BattlezoneGame
 from .lander import LanderGame
 from .snake import SnakeGame
 from .spacewars import SpaceWarsGame
 
-GAMES = {g.id: g for g in (SnakeGame, SpaceWarsGame, AsteroidsGame, LanderGame)}
+GAMES = {g.id: g for g in (SnakeGame, SpaceWarsGame, AsteroidsGame, LanderGame, BattlezoneGame)}
 DEFAULT_GAME = "snake"
