@@ -140,12 +140,14 @@
                  text-shadow: 0 3px 18px rgba(0,0,0,.8); }
   .tile.on .tname { color: var(--accent); }
   .tile + .tile { border-left: 1px solid var(--line); }
-  #home { background: rgba(23, 29, 38, .9); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
+  #home, #lobby { background: rgba(23, 29, 38, .9); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
+  #gallery.locked .tile { cursor: default; }
   @media (max-width: 700px) {
     #gallery { top: auto; height: 36vh; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
     .tile + .tile { border-left: 0; }
     .tile { outline: 1px solid var(--line); }
     .tile:last-child:nth-child(odd) { grid-column: 1 / -1; }   /* odd number of games: last one full width */
+    body.in-lobby #gallery { display: none; }                   /* the room screen scrolls on phones */
     .tile .tname { bottom: 16px; font-size: 18px; letter-spacing: 1px; padding: 0 4px; }
   }
 
@@ -294,12 +296,20 @@
       <button class="tile" data-id="${esc(g.id)}" aria-label="${esc(g.name)}">
         <img src="${esc(g.image)}" alt=""><span class="tname">${esc(g.name)}</span></button>`).join("");
     if ($("gallery").dataset.html !== html) { $("gallery").innerHTML = html; $("gallery").dataset.html = html; }
-    const cur = $("inGame").value;
+    // home: the game you're about to create; room screen: the room's current game
+    const inRoom = screen() === "lobby" && st;
+    const cur = inRoom ? st.game_id : $("inGame").value;
     document.querySelectorAll(".tile").forEach(t => t.classList.toggle("on", t.dataset.id === cur));
+    $("gallery").classList.toggle("locked", !!inRoom && !(st.host === me && st.state === "lobby"));
   }
   $("gallery").addEventListener("click", e => {
     const t = e.target.closest(".tile");
     if (!t) return;
+    if (screen() === "lobby" && st) {
+      // in a room only the host can switch game, and only between matches
+      if (st.host === me && st.state === "lobby" && t.dataset.id !== st.game_id) send({ type: "game", id: t.dataset.id });
+      return;
+    }
     $("inGame").value = t.dataset.id;
     store.set("room.game", t.dataset.id);
     renderGallery();
@@ -464,7 +474,8 @@
         holdUntil = Date.now() + 2200;
         setTimeout(update, 2250);
       }
-      sounds(st, msg);
+      const prev = st;
+      guard("playing sounds", () => sounds(prev, msg));
       showNotices(msg);
       st = msg;
       if (st.state === "lobby") closeModal();
@@ -489,20 +500,40 @@
     $("lobby").classList.toggle("hidden", s !== "lobby");
     $("game").classList.toggle("hidden", s !== "game");
     $("roomChip").classList.toggle("hidden", s === "home");
-    $("gallery").classList.toggle("hidden", s !== "home");
+    $("gallery").classList.toggle("hidden", s !== "home" && s !== "lobby");
     if (s !== "home" && st) { $("chipCode").textContent = st.code; $("chipGame").textContent = st.game_name; }
+    document.body.classList.toggle("in-lobby", s === "lobby");
+    renderGallery();
     if (s === "lobby") renderLobby();
     if (s !== "game") {
       releaseAll();
       // let games stop continuous sounds when their screen goes away
-      for (const m of Object.values(window.GAMES || {})) if (m.onHide) m.onHide();
+      for (const m of Object.values(window.GAMES || {})) {
+        if (m.onHide) guard("stopping sounds", () => m.onHide());
+      }
     }
     if (s === "game") {
       const mod = gameModule(st.game_id);
-      if (mod) { setupControls(st.game_id, mod); mod.render(api); }
+      if (mod) { setupControls(st.game_id, mod); guard("drawing", () => mod.render(api)); }
       $("btnExit").classList.toggle("hidden", st.state !== "match");
     }
     renderAdmit();
+  }
+
+  // A problem in one game's drawing or sound must never stop the page: the game keeps running
+  // and a short note appears at the bottom, so it can be reported and fixed.
+  let lastProblem = "";
+  function guard(what, fn) {
+    try { return fn(); }
+    catch (err) {
+      const text = `Problem while ${what}${st ? ` (${st.game_name})` : ""}: ${err && err.message ? err.message : err}`;
+      if (text !== lastProblem) {
+        lastProblem = text;
+        console.error(text, err);
+        setStatus(text, true);
+      }
+      return undefined;
+    }
   }
 
   // ---------------------------------------------------------- host: join requests

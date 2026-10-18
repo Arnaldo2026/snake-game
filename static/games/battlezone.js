@@ -449,7 +449,17 @@
   }
 
   // ---------------------------------------------------------- sound
+  let engineBroken = false;
   function ensureEngine(api) {
+    if (engineBroken) return null;
+    try { return makeEngine(api); }
+    catch (err) {                                   // no engine sound rather than a stuck game
+      engineBroken = true;
+      console.error("Battlezone engine sound unavailable:", err);
+      return null;
+    }
+  }
+  function makeEngine(api) {
     const a = api.audio();
     if (!a) return null;
     if (engine && engine.ctx === a) return engine;
@@ -466,9 +476,15 @@
   function setEngine(api, moving) {
     const e = moving ? ensureEngine(api) : engine;
     if (!e) return;
-    const now = e.ctx.currentTime;
-    e.gain.gain.setTargetAtTime(api.soundOn() && moving ? 0.07 : 0, now, 0.08);
-    e.o1.frequency.setTargetAtTime(moving ? 52 : 42, now, 0.2);
+    try {
+      const now = e.ctx.currentTime;
+      e.gain.gain.setTargetAtTime(api.soundOn() && moving ? 0.07 : 0, now, 0.08);
+      e.o1.frequency.setTargetAtTime(moving ? 52 : 42, now, 0.2);
+    } catch (err) {
+      engineBroken = true;
+      engine = null;
+      console.error("Battlezone engine sound stopped:", err);
+    }
   }
 
   function sounds(api, prev, next) {

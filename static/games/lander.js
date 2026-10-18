@@ -233,7 +233,17 @@
   }
 
   // continuous engine rumble: filtered noise plus a low hum, loudness follows the throttle
+  let engineBroken = false;
   function ensureEngine(api) {
+    if (engineBroken) return null;
+    try { return makeEngine(api); }
+    catch (err) {                                   // no engine sound rather than a stuck game
+      engineBroken = true;
+      console.error("Lunar Lander engine sound unavailable:", err);
+      return null;
+    }
+  }
+  function makeEngine(api) {
     const a = api.audio();
     if (!a) return null;
     if (engine && engine.ctx === a) return engine;
@@ -258,9 +268,16 @@
   function setEngine(api, level) {
     const e = level > 0 ? ensureEngine(api) : engine;
     if (!e) return;
-    const now = e.ctx.currentTime;
-    e.gain.gain.setTargetAtTime(api.soundOn() ? level * 0.22 : 0, now, 0.05);
-    e.filt.frequency.setTargetAtTime(180 + level * 260, now, 0.05);
+    level = Number.isFinite(level) ? Math.max(0, Math.min(1, level)) : 0;
+    try {
+      const now = e.ctx.currentTime;
+      e.gain.gain.setTargetAtTime(api.soundOn() ? level * 0.22 : 0, now, 0.05);
+      e.filt.frequency.setTargetAtTime(180 + level * 260, now, 0.05);
+    } catch (err) {
+      engineBroken = true;
+      engine = null;
+      console.error("Lunar Lander engine sound stopped:", err);
+    }
   }
 
   let apiRef = null;
