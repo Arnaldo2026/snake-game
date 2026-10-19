@@ -25,7 +25,7 @@
   const lava = [];                                     // eruption particles: [azimuth offset, height, vAz, vH, life]
 
   function resize(api) {
-    const reserve = matchMedia("(pointer: coarse)").matches ? 255 : 170;
+    const reserve = document.body.classList.contains("touch-ui") ? 255 : 170;
     const availW = Math.min(window.innerWidth - 32, 1100);
     const availH = window.innerHeight - reserve;
     // wide view on PCs; on a phone held upright use the spare height for a taller view

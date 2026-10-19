@@ -15,7 +15,7 @@
   for (let i = 0; i < 70; i++) stars.push([rnd() * WW, rnd() * 520, rnd() < .2 ? 1.5 : .9]);
 
   function resize(api) {
-    const reserve = matchMedia("(pointer: coarse)").matches ? 255 : 170;
+    const reserve = document.body.classList.contains("touch-ui") ? 255 : 170;
     const availW = Math.min(window.innerWidth - 32, 1100);
     const availH = window.innerHeight - reserve;
     const w = Math.max(300, Math.floor(Math.min(availW, availH * 1.6)));

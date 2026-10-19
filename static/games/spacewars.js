@@ -12,7 +12,7 @@
 
   function resize(api) {
     // room for header + scoreboard, and below the board either the touch buttons or the keys hint
-    const reserve = matchMedia("(pointer: coarse)").matches ? 255 : 170;
+    const reserve = document.body.classList.contains("touch-ui") ? 255 : 170;
     const availW = Math.min(window.innerWidth - 32, 960);
     const availH = window.innerHeight - reserve;
     const s = Math.max(240, Math.floor(Math.min(availW, availH)));
@@ -127,8 +127,182 @@
     ctx.restore();
   }
 
+  // ---------------------------------------------------------------- physics data pad
+  // Same model as the server (games/spacewars.py): a = GM/r² towards the star with r ≥ soften,
+  // thrust along the nose, speed capped at vmax, semi-implicit Euler with step dt. Ship mass m = 1,
+  // so forces and accelerations have the same numbers. Units: u (world unit, the field is 1000 u wide), s.
+  let padOn = null;
+  const ARROW_S = 1.2;            // accelerations drawn as 1.2 u per u/s²
+  const VEL_S = 0.5;              // velocity drawn as where you'd be in 0.5 s
+  const COL = { v: "#22d3ee", g: "#fb923c", t: "#f87171", n: "#e2e8f0" };
+
+  const num = (v, d = 1) => {
+    if (!isFinite(v)) return "∞";
+    const a = Math.abs(v);
+    if (a !== 0 && (a >= 1e5 || a < 0.01)) return v.toExponential(2).replace("e+", "e");
+    return v.toFixed(d).replace("-", "−");
+  };
+
+  function accel(P, x, y) {
+    if (!P.gm) return [0, 0, 0];
+    const dx = 500 - x, dy = 500 - y;
+    const r2 = Math.max(dx * dx + dy * dy, P.soften * P.soften), r = Math.sqrt(r2), a = P.gm / r2;
+    return [a * dx / r, a * dy / r, a];
+  }
+
+  // coast forward with the game's own integrator (no thrust): where gravity alone takes the ship
+  function predict(g, s, P) {
+    let x = s.x, y = s.y, vx = s.vx, vy = s.vy;
+    const pts = [[x, y]], dt = P.dt;
+    let hit = null;
+    for (let i = 0; i < 300; i++) {                     // 10 seconds
+      const [ax, ay] = accel(P, x, y);
+      vx += ax * dt; vy += ay * dt;
+      const sp = Math.hypot(vx, vy);
+      if (sp > P.vmax) { vx *= P.vmax / sp; vy *= P.vmax / sp; }
+      x += vx * dt; y += vy * dt;
+      if (P.edges === "wrap") {
+        if (x < 0 || x >= 1000 || y < 0 || y >= 1000) {
+          x = ((x % 1000) + 1000) % 1000; y = ((y % 1000) + 1000) % 1000;
+          pts.push(null);                               // jump to the other side: break the line
+        }
+      } else {
+        const R = P.ship_r;
+        if (x < R) { x = R; vx = Math.abs(vx) * .8; } else if (x > 1000 - R) { x = 1000 - R; vx = -Math.abs(vx) * .8; }
+        if (y < R) { y = R; vy = Math.abs(vy) * .8; } else if (y > 1000 - R) { y = 1000 - R; vy = -Math.abs(vy) * .8; }
+      }
+      pts.push([x, y]);
+      if (g.star && Math.hypot(x - 500, y - 500) < P.star_r + P.ship_r * 0.6) { hit = [x, y]; break; }
+    }
+    return { pts, hit };
+  }
+
+  function arrow(ctx, x, y, dx, dy, color, label, dashed) {
+    const len = Math.hypot(dx, dy);
+    if (len < 2) return;
+    const max = 320;
+    if (len > max) { dx *= max / len; dy *= max / len; }
+    const x1 = (x + dx) * scale, y1 = (y + dy) * scale, x0 = x * scale, y0 = y * scale;
+    const ang = Math.atan2(y1 - y0, x1 - x0), h = Math.max(5, 9 * scale);
+    ctx.save();
+    ctx.strokeStyle = ctx.fillStyle = color;
+    ctx.lineWidth = Math.max(1.5, 2.2 * scale);
+    if (dashed) ctx.setLineDash([5, 4]);
+    ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x1 - h * Math.cos(ang - .45), y1 - h * Math.sin(ang - .45));
+    ctx.lineTo(x1 - h * Math.cos(ang + .45), y1 - h * Math.sin(ang + .45));
+    ctx.closePath(); ctx.fill();
+    ctx.font = `700 ${Math.max(10, Math.round(13 * scale + 2))}px ui-monospace, Consolas, monospace`;
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText(label, x1 + Math.cos(ang) * 11, y1 + Math.sin(ang) * 11);
+    ctx.restore();
+  }
+
+  function drawPhysics(ctx, g, s, color) {
+    const P = g.phys;
+    // predicted coasting path, with a dot every second
+    const { pts, hit } = predict(g, s, P);
+    ctx.save();
+    ctx.strokeStyle = color; ctx.globalAlpha = .55;
+    ctx.lineWidth = Math.max(1, 1.4 * scale);
+    ctx.setLineDash([3, 5]);
+    ctx.beginPath();
+    let pen = false;
+    pts.forEach(p => {
+      if (!p) { pen = false; return; }
+      pen ? ctx.lineTo(p[0] * scale, p[1] * scale) : ctx.moveTo(p[0] * scale, p[1] * scale);
+      pen = true;
+    });
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = color; ctx.globalAlpha = .8;
+    for (let i = 30; i < pts.length; i += 30) {
+      // count real steps (nulls are wrap markers)
+      const p = pts.filter(Boolean)[i];
+      if (p) { ctx.beginPath(); ctx.arc(p[0] * scale, p[1] * scale, Math.max(1.5, 2.2 * scale), 0, Math.PI * 2); ctx.fill(); }
+    }
+    if (hit) {
+      ctx.globalAlpha = 1; ctx.strokeStyle = "#ef4444"; ctx.lineWidth = 2;
+      const [hx, hy] = [hit[0] * scale, hit[1] * scale], k = 7;
+      ctx.beginPath(); ctx.moveTo(hx - k, hy - k); ctx.lineTo(hx + k, hy + k); ctx.moveTo(hx + k, hy - k); ctx.lineTo(hx - k, hy + k); ctx.stroke();
+    }
+    ctx.restore();
+    // vectors
+    const [gx, gy] = accel(P, s.x, s.y);
+    const tx = s.thrust ? Math.cos(s.a) * P.thrust : 0, ty = s.thrust ? Math.sin(s.a) * P.thrust : 0;
+    arrow(ctx, s.x, s.y, s.vx * VEL_S, s.vy * VEL_S, COL.v, "v");
+    if (P.gm) arrow(ctx, s.x, s.y, gx * ARROW_S, gy * ARROW_S, COL.g, "g");
+    if (s.thrust) {
+      arrow(ctx, s.x, s.y, tx * ARROW_S, ty * ARROW_S, COL.t, "T");
+      if (P.gm) arrow(ctx, s.x, s.y, (gx + tx) * ARROW_S, (gy + ty) * ARROW_S, COL.n, "a", true);
+    }
+    return !!hit;
+  }
+
+  function padHtml(api, g, s, hit) {
+    const P = g.phys, mu = P.gm;
+    // maths axes: x to the right, y up, origin at the star
+    const rx = s.x - 500, ry = 500 - s.y, vx = s.vx, vy = -s.vy;
+    const r = Math.hypot(rx, ry), v = Math.hypot(vx, vy);
+    const th = (Math.atan2(ry, rx) * 180 / Math.PI + 360) % 360;
+    const vr = r ? (rx * vx + ry * vy) / r : 0, vt = r ? (rx * vy - ry * vx) / r : 0;
+    const reff = Math.max(r, P.soften);
+    const ga = mu ? Math.abs(mu) / (reff * reff) : 0;
+    const ta = s.thrust ? P.thrust : 0;
+    const [gx, gy] = accel(P, s.x, s.y);
+    const tx = s.thrust ? Math.cos(s.a) * P.thrust : 0, ty = s.thrust ? Math.sin(s.a) * P.thrust : 0;
+    const anet = Math.hypot(gx + tx, gy + ty);
+    const c = (k, t) => `<span style="color:${COL[k]}">${t}</span>`;
+    const row = (a, b) => `<div style="display:flex;justify-content:space-between;gap:10px"><span>${a}</span><span>${b}</span></div>`;
+    const gname = { off: "off", weak: "weak", normal: "normal", strong: "strong", negative: "repulsive" }[g.gravity] || g.gravity;
+    const lines = [
+      `<div style="font-weight:700;letter-spacing:1px;margin-bottom:3px">PHYSICS · your ship</div>`,
+      row("GM", `${num(mu, 0)} u³/s² <span style="opacity:.6">(${gname})</span>`),
+      row("r", `${num(r)} u · θ ${num(th, 0)}°${r < P.soften ? " <span style='opacity:.6'>(r<" + P.soften + ": soft)</span>" : ""}`),
+      row(c("v", "v"), `${num(v)} u/s${v >= P.vmax - 0.5 ? " <span style='opacity:.6'>(limit)</span>" : ""}`),
+      row(`&nbsp;&nbsp;v<sub>r</sub> · v<sub>t</sub>`, `${num(vr)} · ${num(vt)}`),
+    ];
+    if (mu) lines.push(row(c("g", mu > 0 ? "g = GM/r²" : "g = |GM|/r²"), `${num(ga)} u/s² ${mu > 0 ? "→ star" : "← away"}`));
+    lines.push(row(c("t", "thrust T"), `${s.thrust ? num(ta, 0) : "0"} u/s² ${s.thrust ? "ON" : "off"}`));
+    if (mu) lines.push(row(c("n", "|a| = |g + T|"), `${num(anet)} u/s²`));
+    lines.push(row("F = m·a", `m = 1 → F = ${num(anet)}`));
+    if (mu > 0) {
+      const eps = v * v / 2 - mu / r, h = rx * vy - ry * vx;
+      const e = Math.sqrt(Math.max(0, 1 + 2 * eps * h * h / (mu * mu)));
+      lines.push(`<div style="border-top:1px solid #334155;margin:4px 0 2px"></div>`);
+      lines.push(row("v<sub>circ</sub> = √(GM/r)", num(Math.sqrt(mu / r))));
+      lines.push(row("v<sub>esc</sub> = √(2GM/r)", num(Math.sqrt(2 * mu / r))));
+      lines.push(row("ε = v²/2 − GM/r", `${num(eps, 0)} u²/s²`));
+      lines.push(row("h = r × v", `${num(h, 0)} u²/s ${h > 0 ? "⟲" : h < 0 ? "⟳" : ""}`));
+      lines.push(row("e", `${num(e, 3)} ${eps < 0 ? (e < 0.02 ? "≈ circle" : "ellipse") : e > 1.0001 ? "hyperbola" : "parabola"}`));
+      if (eps < 0) {
+        const a = -mu / (2 * eps), rp = a * (1 - e), ra = a * (1 + e), T = 2 * Math.PI * Math.sqrt(a * a * a / mu);
+        lines.push(row("a = −GM/2ε", `${num(a, 0)} u`));
+        lines.push(row("peri · apo", `${num(rp, 0)} · ${num(ra, 0)} u`));
+        lines.push(row("T = 2π√(a³/GM)", `${num(T)} s`));
+        if (ra > 500) lines.push(`<div style="opacity:.7">apoapsis beyond the screen edge${P.edges === "wrap" ? " (wraps)" : " (bounces)"}</div>`);
+      } else {
+        lines.push(`<div style="opacity:.7">unbound: escapes the star${P.edges === "wrap" ? " – but the edges wrap" : ""}</div>`);
+      }
+    } else if (mu < 0) {
+      lines.push(`<div style="opacity:.7;margin-top:3px">repulsive star: no bound orbits</div>`);
+    } else {
+      lines.push(`<div style="opacity:.7;margin-top:3px">no gravity: straight lines (1st law)</div>`);
+    }
+    if (hit) lines.push(`<div style="color:#f87171;font-weight:700">✕ collision course with the star</div>`);
+    lines.push(`<div style="opacity:.55;margin-top:4px;font-size:.9em">model: Δt ${num(P.dt, 4)} s · |v| ≤ ${P.vmax} · r ≥ ${P.soften} · ${P.edges}<br>
+      arrows: v × 0.5 s · g, T, a × 1.2 s² · dotted: coasting path, a dot per second</div>`);
+    const font = size < 520 ? 9.5 : 11.5;
+    return `<div style="background:rgba(2,6,23,.78);border:1px solid #334155;border-radius:8px;padding:7px 9px;
+      font:${font}px/1.35 ui-monospace,Consolas,monospace;color:#e2e8f0;width:${size < 520 ? 190 : 250}px">${lines.join("")}</div>`;
+  }
+
   function render(api) {
     resize(api);
+    if (padOn === null) padOn = api.store.get("sw.pad") === "on";
     const st = api.st(), me = api.me(), g = st.game, ctx = api.ctx;
     const players = Object.fromEntries(st.players.map(p => [p.id, p]));
     const t = performance.now() / 1000;
@@ -169,6 +343,21 @@
         ctx.fillText(s.id === me ? "you" : p.name, s.x * scale, (s.y - 24) * scale);
       }
     }
+
+    // physics data pad: vectors and path on my ship, numbers in the corner
+    const myShip = g.ships.find(s => s.id === me);
+    let padHTML = "";
+    if (padOn && g.phys) {
+      if (myShip && myShip.alive && !myShip.hyper && myShip.vx != null) {
+        const hit = drawPhysics(ctx, g, myShip, (players[me] || {}).color || "#fff");
+        padHTML = padHtml(api, g, myShip, hit);
+      } else {
+        padHTML = `<div style="background:rgba(2,6,23,.78);border:1px solid #334155;border-radius:8px;padding:7px 9px;
+          font:11px ui-monospace,Consolas,monospace;color:#94a3b8">PHYSICS · waiting for your ship…</div>`;
+      }
+    }
+    const ov = api.$("overlay");
+    if (ov.innerHTML !== padHTML) ov.innerHTML = padHTML;
 
     // HUD
     const sorted = [...g.ships].sort((a, b) => b.points - a.points);
@@ -273,9 +462,18 @@
         { key: "hyper", label: "&#10022;", sub: "hyperspace", col: 1, span: 2, row: 2 },
       ],
     },
-    help: "← → rotate · ↑ thrust · Space fire · ↓ hyperspace · Esc to exit",
+    help: "← → rotate · ↑ thrust · Space fire · ↓ hyperspace · I physics data · Esc to exit",
   };
+  // a button in the top bar (and the I key) opens the physics data pad
+  const tools = [{ id: "pad", label: "📐", title: "Physics data pad (I)", key: "i" }];
+  function onTool(api, id) {
+    if (id !== "pad") return;
+    padOn = !padOn;
+    api.store.set("sw.pad", padOn ? "on" : "off");
+  }
+  const toolOn = id => id === "pad" && !!padOn;
 
   window.GAMES = window.GAMES || {};
-  window.GAMES.spacewars = { render, sounds, liveInfo, status, controls, onResize() { sizedFor = ""; } };
+  window.GAMES.spacewars = { render, sounds, liveInfo, status, controls, tools, onTool, toolOn,
+    onResize() { sizedFor = ""; } };
 })();

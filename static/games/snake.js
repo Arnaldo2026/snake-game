@@ -17,7 +17,7 @@
   function resize(api, g) {
     const { canvas, ctx } = api;
     // room for header + scoreboard, and below the board either the touch buttons or the keys hint
-    const reserve = matchMedia("(pointer: coarse)").matches ? 255 : 170;
+    const reserve = document.body.classList.contains("touch-ui") ? 255 : 170;
     const availW = Math.min(window.innerWidth - 32, 960);
     const availH = window.innerHeight - reserve;
     const c = Math.max(8, Math.floor(Math.min(availW / g.w, availH / g.h)));

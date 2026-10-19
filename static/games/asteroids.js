@@ -6,7 +6,7 @@
   let beatAt = 0, beatHigh = false;
 
   function resize(api) {
-    const reserve = matchMedia("(pointer: coarse)").matches ? 255 : 170;
+    const reserve = document.body.classList.contains("touch-ui") ? 255 : 170;
     const availW = Math.min(window.innerWidth - 32, 960);
     const availH = window.innerHeight - reserve;
     const s = Math.max(240, Math.floor(Math.min(availW, availH)));

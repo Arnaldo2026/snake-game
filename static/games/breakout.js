@@ -8,7 +8,7 @@
 
   function resize(api, g) {
     // touch: without the buttons the field grows, leaving a strip below it for the thumb
-    const reserve = api.touchDrag() ? 215 : matchMedia("(pointer: coarse)").matches ? 255 : 170;
+    const reserve = api.touchDrag() ? 215 : document.body.classList.contains("touch-ui") ? 255 : 170;
     const ratio = g.w / g.h;
     const availW = Math.min(window.innerWidth - 32, 900);
     const availH = window.innerHeight - reserve;

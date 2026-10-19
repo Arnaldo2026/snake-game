@@ -26,6 +26,7 @@ DT = 1 / 30                    # physics step and broadcast rate
 SHIP_R = 14
 STAR_R = 22
 ROT_SPEED = 3.6                # rad/s
+SOFTEN = 40.0                  # gravity uses r >= this, so the pull never becomes infinite
 THRUST = 240.0                 # units/s²
 MAX_SPEED = 420.0
 TORP_SPEED = 430.0
@@ -285,7 +286,7 @@ class SpaceWarsGame:
         if not g:
             return 0.0, 0.0
         dx, dy = CX - x, CY - y
-        r2 = max(dx * dx + dy * dy, 40.0 * 40.0)
+        r2 = max(dx * dx + dy * dy, SOFTEN * SOFTEN)
         r = math.sqrt(r2)
         acc = g / r2
         return acc * dx / r, acc * dy / r
@@ -541,9 +542,12 @@ class SpaceWarsGame:
             "round_winner": self.round_winner,
             "solo": self.solo,
             "rocks_on": self.settings["asteroids"] > 0,
+            # the numbers behind the physics, for the browser's data pad
+            "phys": {"gm": self.g, "thrust": THRUST, "soften": SOFTEN, "vmax": MAX_SPEED, "dt": round(DT, 5),
+                     "star_r": STAR_R, "ship_r": SHIP_R, "edges": self.settings["edges"]},
             "rocks": [[r(k.x), r(k.y), r(k.r), k.seed, round(k.rot, 2)] for k in self.rocks],
             "ships": [{
-                "id": s.id, "x": r(s.x), "y": r(s.y), "a": round(s.a, 3),
+                "id": s.id, "x": r(s.x), "y": r(s.y), "a": round(s.a, 3), "vx": r(s.vx), "vy": r(s.vy),
                 "alive": s.alive, "out": s.out, "points": s.points, "deaths": s.deaths,
                 "respawn": round(max(0.0, s.respawn_at - now), 1) if s.respawn_at else None,
                 "thrust": s.alive and "thrust" in s.keys and not s.hyper_until,

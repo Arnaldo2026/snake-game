@@ -4,7 +4,7 @@
   let cw = 800, ch = 560, k = 0.8, sizedFor = "";
 
   function resize(api, g) {
-    const reserve = api.touchDrag() ? 175 : matchMedia("(pointer: coarse)").matches ? 255 : 170;
+    const reserve = api.touchDrag() ? 175 : document.body.classList.contains("touch-ui") ? 255 : 170;
     const ratio = g.w / g.h;
     const availW = Math.min(window.innerWidth - 32, 1100);
     const availH = window.innerHeight - reserve;

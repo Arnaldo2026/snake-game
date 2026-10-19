@@ -70,7 +70,15 @@
   .seg button { padding: 10px 6px; font-size: 14px; }
   .seg button.on { background: var(--btn-on); outline: 2px solid var(--accent); outline-offset: -2px; }
   #lbSettings { display: flex; flex-direction: column; gap: 10px; }
+  #lbTouch { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; }
+  #lbTouch:empty { display: none; }
   #lbTouch .seg button { font-size: 12px; padding: 10px 2px; }
+  /* buttons a game adds to the top bar (e.g. a data pad), and its overlay on the board */
+  #gameTools { display: flex; gap: 6px; }
+  #gameTools button { padding: 4px 8px; font-size: 17px; line-height: 1.2; }
+  #gameTools button.on { background: var(--btn-on); outline: 2px solid var(--accent); outline-offset: -2px; }
+  #overlay { position: absolute; top: 8px; left: 8px; pointer-events: none; }
+  #overlay:empty { display: none; }
   #lbTouch .tag { font-size: 11px; color: var(--muted); text-transform: none; letter-spacing: 0; }
 
   #results { background: var(--bg); border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
@@ -113,7 +121,8 @@
   .lever.h { padding: 0 12px; }
   .lever.h input { writing-mode: horizontal-tb; direction: ltr; -webkit-appearance: auto; appearance: auto;
                    width: 100%; height: 36px; flex: none; }
-  @media (pointer: coarse) { #pad { display: grid; } #keysHelp { display: none; } }
+  body.touch-ui #pad { display: grid; }
+  body.touch-ui #keysHelp { display: none; }
   #keysHelp { text-align: center; }
 
   /* touch screens: drag anywhere instead of buttons, plus vibration (games that offer it) */
@@ -246,10 +255,11 @@
   <section id="game" class="hidden">
     <div id="hud">
       <div id="chips"></div>
-      <div id="hudRight"><div id="timer"></div><span id="touchBar"><button id="btnTouchMode"></button><button id="btnVibe"></button></span><button id="btnExit">Exit</button></div>
+      <div id="hudRight"><div id="timer"></div><span id="gameTools"></span><span id="touchBar"><button id="btnTouchMode"></button><button id="btnVibe"></button></span><button id="btnExit">Exit</button></div>
     </div>
     <div id="wrap">
       <canvas id="board"></canvas>
+      <div id="overlay"></div>
       <div id="msg" class="hidden"><div class="big" id="msgBig"></div><div class="small" id="msgSmall"></div></div>
     </div>
     <div id="pad"></div>
@@ -422,7 +432,7 @@
     $, canvas, ctx, color, esc, fmtTime, play, tone, sfx: SFX,
     audio: () => (soundOn ? audio() : null),       // for continuous game sounds (e.g. an engine)
     soundOn: () => soundOn,
-    st: () => st, me: () => me,
+    st: () => st, me: () => me, store,
     setMessage(big, small, huge, dim) {
       $("msg").classList.toggle("hidden", !big && big !== 0);
       $("msg").classList.toggle("dim", !!dim);
@@ -548,7 +558,12 @@
     }
     if (s === "game") {
       const mod = gameModule(st.game_id);
-      if (mod) { setupControls(st.game_id, mod); guard("drawing", () => mod.render(api)); }
+      if (mod) {
+        setupControls(st.game_id, mod);
+        guard("drawing", () => mod.render(api));
+        document.querySelectorAll("#gameTools button").forEach(b =>
+          b.classList.toggle("on", !!(mod.toolOn && mod.toolOn(b.dataset.tool))));
+      }
       $("btnExit").classList.toggle("hidden", st.state !== "match");
     }
     renderAdmit();
@@ -751,7 +766,23 @@
         ${b.label}${b.sub ? `<small>${esc(b.sub)}</small>` : ""}</button>`;
     }).join("");
     $("keysHelp").textContent = controls.help || "";
+    $("overlay").innerHTML = "";
+    gameTools = mod.tools || [];
+    $("gameTools").innerHTML = gameTools.map(t =>
+      `<button data-tool="${esc(t.id)}" title="${esc(t.title || "")}" aria-label="${esc(t.title || t.id)}">${t.label}</button>`).join("");
   }
+  let gameTools = [];
+  function useTool(id) {
+    const mod = st && gameModule(st.game_id);
+    if (mod && mod.onTool) guard("using a game tool", () => mod.onTool(api, id));
+    update();
+  }
+  $("gameTools").addEventListener("click", e => {
+    const b = e.target.closest("button[data-tool]");
+    if (!b) return;
+    b.blur();
+    useTool(b.dataset.tool);
+  });
 
   function press(key) {
     if (controls.hold) {
@@ -777,6 +808,8 @@
     if (modalOpen()) { if (e.key === "Escape") closeModal(); return; }
     if (e.target.tagName === "INPUT" || e.target.tagName === "SELECT") return;
     if (e.key === "Escape" && screen() === "game" && st.state === "match") { releaseAll(); openModal(); return; }
+    const tool = screen() === "game" && gameTools.find(t => t.key === keyName(e));
+    if (tool) { e.preventDefault(); if (!e.repeat) useTool(tool.id); return; }
     const ctl = controls.keys[keyName(e)];
     if (screen() === "game" && ctl) {
       e.preventDefault();
@@ -851,7 +884,8 @@
   // Games can declare  drag: {key, axis: "x"|"y", flip, gain, tap, hint}.  On a phone or tablet a finger
   // dragged anywhere on the screen moves the paddle by the same amount (no buttons to find, nothing to
   // look at), a quick tap sends the "tap" control, and the phone can vibrate on hits. PCs are unchanged.
-  const isTouch = () => matchMedia("(pointer: coarse)").matches;
+  let screenPref = ["on", "off"].includes(store.get("ui.touch")) ? store.get("ui.touch") : "auto";
+  const isTouch = () => screenPref === "on" || (screenPref === "auto" && matchMedia("(pointer: coarse)").matches);
   const canVibe = typeof navigator.vibrate === "function";
   let touchMode = store.get("touch.mode") === "buttons" ? "buttons" : "drag";
   let vibeOn = store.get("touch.vibe") !== "off";
@@ -862,6 +896,7 @@
   const dragOn = () => isTouch() && !!controls.drag && touchMode === "drag";
 
   function paintTouch(s) {
+    document.body.classList.toggle("touch-ui", isTouch());
     const show = s === "game" && isTouch() && !!controls.drag;
     const on = show && touchMode === "drag";
     document.body.classList.toggle("has-drag", show);
@@ -883,12 +918,17 @@
     const v = parseFloat(store.get(`touch.sens.${gid}`));
     return SENS.some(([x]) => x === v) ? v : 1;
   }
+  const SCREEN = [["auto", "Auto"], ["on", "Always"], ["off", "Never"]];
   function renderTouchSetting(mod) {
     const show = isTouch() && mod && mod.controls && mod.controls.drag;
-    let html = "";
+    let html = `<div><div class="label">On-screen controls <span class="tag">(this device only)</span></div>
+      <div class="seg">${SCREEN.map(([v, label]) =>
+        `<button data-screen="${v}" class="${v === screenPref ? "on" : ""}">${label}</button>`).join("")}</div>
+      <div class="hint">Auto shows them on phones and tablets. Choose Always for a touch screen without a keyboard
+        that isn't recognised (e.g. a car's screen).</div></div>`;
     if (show) {
       const cur = sensitivity(st.game_id);
-      html = `<div><div class="label">Drag sensitivity <span class="tag">(your phone only)</span></div>
+      html += `<div><div class="label">Drag sensitivity <span class="tag">(your phone only)</span></div>
         <div class="seg">${SENS.map(([v, label]) =>
           `<button data-sens="${v}" class="${v === cur ? "on" : ""}">${label}</button>`).join("")}</div>
         <div class="hint">How far the ${mod.controls.drag.axis === "y" ? "bar" : "paddle"} moves when you slide your finger.
@@ -897,8 +937,15 @@
     if ($("lbTouch").dataset.html !== html) { $("lbTouch").innerHTML = html; $("lbTouch").dataset.html = html; }
   }
   $("lbTouch").addEventListener("click", e => {
-    const b = e.target.closest("button[data-sens]");
+    const b = e.target.closest("button[data-sens], button[data-screen]");
     if (!b || !st) return;
+    if (b.dataset.screen) {
+      screenPref = b.dataset.screen;
+      store.set("ui.touch", screenPref);
+      document.body.classList.toggle("touch-ui", isTouch());
+      relayout();
+      return;
+    }
     store.set(`touch.sens.${st.game_id}`, b.dataset.sens);
     renderLobby();
   });
@@ -956,7 +1003,7 @@
   }
   const notForDrag = el => el.closest && el.closest("button, input, select, a, #hud, #touchBar, #modal, #float, header");
   window.addEventListener("pointerdown", e => {
-    if (e.pointerType === "mouse" || !dragOn() || screen() !== "game" || modalOpen() || notForDrag(e.target)) return;
+    if ((e.pointerType === "mouse" && screenPref !== "on") || !dragOn() || screen() !== "game" || modalOpen() || notForDrag(e.target)) return;
     e.preventDefault();
     if (soundOn) audio();
     touches.set(e.pointerId, { x: e.clientX, y: e.clientY, t: Date.now(), moved: 0 });
