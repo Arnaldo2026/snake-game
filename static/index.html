@@ -113,6 +113,18 @@
                    width: 100%; height: 36px; flex: none; }
   @media (pointer: coarse) { #pad { display: grid; } #keysHelp { display: none; } }
   #keysHelp { text-align: center; }
+
+  /* touch screens: drag anywhere instead of buttons, plus vibration (games that offer it) */
+  #touchBar { display: none; gap: 6px; }
+  #touchBar button { padding: 4px 8px; font-size: 17px; line-height: 1.2; }
+  #dragHint { display: none; text-align: center; font-size: 13px; color: var(--muted); padding: 0 8px; }
+  body.has-drag #touchBar { display: flex; }
+  body.has-drag #dragHint { display: block; }
+  html.drag-mode, body.drag-mode { touch-action: none; overscroll-behavior: none; }
+  body.drag-mode #pad { display: none !important; }
+  #wrap.flash::after { content: ""; position: absolute; inset: 0; border-radius: 10px; pointer-events: none;
+                       box-shadow: inset 0 0 0 4px #ef4444, inset 0 0 48px rgba(239,68,68,.65); animation: flash .7s forwards; }
+  @keyframes flash { from { opacity: 1; } to { opacity: 0; } }
   #status { font-size: 12px; color: var(--muted); min-height: 16px; }
   #status.bad { color: var(--err); }
 
@@ -231,13 +243,14 @@
   <section id="game" class="hidden">
     <div id="hud">
       <div id="chips"></div>
-      <div id="hudRight"><div id="timer"></div><button id="btnExit">Exit</button></div>
+      <div id="hudRight"><div id="timer"></div><span id="touchBar"><button id="btnTouchMode"></button><button id="btnVibe"></button></span><button id="btnExit">Exit</button></div>
     </div>
     <div id="wrap">
       <canvas id="board"></canvas>
       <div id="msg" class="hidden"><div class="big" id="msgBig"></div><div class="small" id="msgSmall"></div></div>
     </div>
     <div id="pad"></div>
+    <div id="dragHint"></div>
     <div id="keysHelp" class="hint"></div>
   </section>
 
@@ -536,6 +549,7 @@
       $("btnExit").classList.toggle("hidden", st.state !== "match");
     }
     renderAdmit();
+    paintTouch(s);
   }
 
   // A problem in one game's drawing or sound must never stop the page: the game keeps running
@@ -748,6 +762,7 @@
   }
   function releaseAll() {
     for (const k of [...held]) release(k);
+    endDrag();
     pointers.clear();
     document.querySelectorAll("#pad button.held").forEach(b => b.classList.remove("held"));
   }
@@ -806,6 +821,7 @@
   window.addEventListener("pointerup", () => { leverHeld = null; });
   api.syncLever = (key, value) => {
     const el = document.querySelector(`#pad input[data-lever="${key}"]`);
+    leverValue[key] = value;
     if (el && el !== leverHeld && Math.abs(el.value / 100 - value) > 0.02) el.value = Math.round(value * 100);
   };
   $("pad").addEventListener("contextmenu", e => e.preventDefault());
@@ -825,6 +841,135 @@
     sx = t.clientX; sy = t.clientY;
   }, { passive: false });
   wrap.addEventListener("touchend", () => { tracking = false; });
+
+  // ---------------------------------------------------------- touch screens: drag anywhere
+  // Games can declare  drag: {key, axis: "x"|"y", flip, gain, tap, hint}.  On a phone or tablet a finger
+  // dragged anywhere on the screen moves the paddle by the same amount (no buttons to find, nothing to
+  // look at), a quick tap sends the "tap" control, and the phone can vibrate on hits. PCs are unchanged.
+  const isTouch = () => matchMedia("(pointer: coarse)").matches;
+  const canVibe = typeof navigator.vibrate === "function";
+  let touchMode = store.get("touch.mode") === "buttons" ? "buttons" : "drag";
+  let vibeOn = store.get("touch.vibe") !== "off";
+  const leverValue = {};          // where the game last said each knob is (0..1)
+  const touches = new Map();      // pointerId -> {x, y, t, moved}
+  let driver = null;              // the finger that moves the paddle
+  let dragKey = null, dragValue = 0.5, localUntil = 0, sendQueued = false;
+  const dragOn = () => isTouch() && !!controls.drag && touchMode === "drag";
+
+  function paintTouch(s) {
+    const show = s === "game" && isTouch() && !!controls.drag;
+    const on = show && touchMode === "drag";
+    document.body.classList.toggle("has-drag", show);
+    document.body.classList.toggle("drag-mode", on);
+    document.documentElement.classList.toggle("drag-mode", on);
+    if (!show) return;
+    $("dragHint").textContent = touchMode === "drag"
+      ? `${controls.drag.hint || "Drag anywhere to move"} · 🎮 top right for buttons`
+      : "✋ top right: back to drag anywhere";
+    $("btnTouchMode").textContent = touchMode === "drag" ? "🎮" : "✋";
+    $("btnTouchMode").title = $("btnTouchMode").ariaLabel = touchMode === "drag" ? "Use on-screen buttons" : "Drag anywhere";
+    $("btnVibe").textContent = vibeOn ? "📳" : "📴";
+    $("btnVibe").title = $("btnVibe").ariaLabel = vibeOn ? "Vibration on" : "Vibration off";
+    $("btnVibe").classList.toggle("hidden", !canVibe);
+  }
+  function relayout() {
+    for (const m of Object.values(window.GAMES || {})) if (m.onResize) m.onResize();
+    update();
+  }
+  $("btnTouchMode").onclick = e => {
+    touchMode = touchMode === "drag" ? "buttons" : "drag";
+    store.set("touch.mode", touchMode);
+    e.currentTarget.blur();
+    endDrag();
+    relayout();
+  };
+  $("btnVibe").onclick = e => {
+    vibeOn = !vibeOn;
+    store.set("touch.vibe", vibeOn ? "on" : "off");
+    e.currentTarget.blur();
+    if (vibeOn) api.buzz(30);
+    update();
+  };
+
+  api.touchDrag = dragOn;                     // games give the field more room when there are no buttons
+  api.dragging = () => driver !== null;
+  // my own paddle is drawn where my finger put it, without waiting for the server
+  api.dragValue = key => (dragKey === key && (driver !== null || Date.now() < localUntil)) ? dragValue : null;
+  api.buzz = pattern => {
+    if (!vibeOn || !canVibe || !isTouch()) return;
+    try { navigator.vibrate(pattern); } catch (e) {}
+  };
+  api.flash = () => {
+    if (!isTouch()) return;
+    const w = $("wrap");
+    w.classList.remove("flash"); void w.offsetWidth; w.classList.add("flash");
+  };
+
+  function queueSend() {
+    if (sendQueued) return;
+    sendQueued = true;
+    requestAnimationFrame(() => {
+      sendQueued = false;
+      if (dragKey === null) return;
+      send({ type: "input", key: dragKey, value: dragValue, drag: true });
+      if (screen() === "game" && st) {
+        const mod = gameModule(st.game_id);
+        if (mod) guard("drawing", () => mod.render(api));
+      }
+    });
+  }
+  function endDrag() {
+    if (driver !== null) localUntil = Date.now() + 350;
+    touches.clear();
+    driver = null;
+  }
+  const notForDrag = el => el.closest && el.closest("button, input, select, a, #hud, #touchBar, #modal, #float, header");
+  window.addEventListener("pointerdown", e => {
+    if (e.pointerType === "mouse" || !dragOn() || screen() !== "game" || modalOpen() || notForDrag(e.target)) return;
+    e.preventDefault();
+    if (soundOn) audio();
+    touches.set(e.pointerId, { x: e.clientX, y: e.clientY, t: Date.now(), moved: 0 });
+    if (driver === null) {
+      driver = e.pointerId;
+      dragKey = controls.drag.key;
+      // start from where the paddle is now (or where my finger left it a moment ago)
+      if (Date.now() >= localUntil) dragValue = leverValue[dragKey] != null ? leverValue[dragKey] : 0.5;
+    }
+  }, { passive: false });
+  window.addEventListener("pointermove", e => {
+    const t = touches.get(e.pointerId);
+    if (!t) return;
+    e.preventDefault();
+    const dx = e.clientX - t.x, dy = e.clientY - t.y;
+    t.moved += Math.abs(dx) + Math.abs(dy);
+    t.x = e.clientX; t.y = e.clientY;
+    if (e.pointerId !== driver) return;
+    const d = controls.drag;
+    const size = Math.max(120, d.axis === "y" ? canvas.clientHeight : canvas.clientWidth);
+    let delta = (d.axis === "y" ? dy : dx) * (d.gain || 1.5) / size;
+    if (d.flip) delta = -delta;
+    dragValue = Math.min(1, Math.max(0, dragValue + delta));
+    queueSend();
+  }, { passive: false });
+  const touchUp = e => {
+    const t = touches.get(e.pointerId);
+    if (!t) return;
+    touches.delete(e.pointerId);
+    // a quick tap without sliding: the game's tap control (e.g. serve)
+    if (e.type === "pointerup" && controls.drag && controls.drag.tap && t.moved < 14 && Date.now() - t.t < 350) {
+      send({ type: "input", key: controls.drag.tap, down: true });
+      send({ type: "input", key: controls.drag.tap, down: false });
+    }
+    if (e.pointerId === driver) {
+      driver = null;
+      localUntil = Date.now() + 350;
+      // another finger still down takes over
+      const next = touches.keys().next();
+      if (!next.done) driver = next.value;
+    }
+  };
+  window.addEventListener("pointerup", touchUp);
+  window.addEventListener("pointercancel", touchUp);
 
   window.addEventListener("resize", () => {
     for (const m of Object.values(window.GAMES || {})) if (m.onResize) m.onResize();

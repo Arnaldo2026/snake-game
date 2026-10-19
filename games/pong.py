@@ -15,7 +15,8 @@ angle, and it speeds up during a rally.
 
 Same interface as games/snake.py. Inputs: {"key": "up"|"down", "down": bool}
 for held keys, or {"key": "pos", "value": 0..1} from the on-screen lever
-(1 = top), which sets the bar position directly like the original knob.
+(1 = top), which sets the bar position directly like the original knob;
+with "drag": true (a finger dragged on a touch screen) the bars jump there.
 """
 
 import math
@@ -86,6 +87,8 @@ class PongGame:
         self.hits = 0              # counters for the browser's beeps
         self.walls = 0
         self.points = 0
+        self.hit_pid = None        # who hit last, and which side won the last point (for vibration)
+        self.point_to = None
         self.rally = 0
         self.solo_hits = 0
         self.solo_balls = SOLO_BALLS
@@ -174,6 +177,11 @@ class PongGame:
                 return
             h = BAR_SIZES[self.settings["bat"]]
             self.target_y[pid] = h / 2 + (1 - v) * (H - h)
+            if data.get("drag"):
+                # dragging a finger on a touch screen: the bars follow it at once
+                for bar in self.bars:
+                    if bar.controllers and bar.controllers[0] == pid:
+                        bar.y = min(max(self.target_y[pid], bar.h / 2), H - bar.h / 2)
             return
         if key not in ("up", "down"):
             return
@@ -261,6 +269,7 @@ class PongGame:
                 b[3] = speed * math.sin(ang)
                 b[0] = bar.x + direction * (BAR_W + BALL) / 2
                 self.hits += 1
+                self.hit_pid = bar.controllers[0] if bar.controllers else None
                 self.rally += 1
                 if self.solo:
                     self.solo_hits += 1
@@ -277,6 +286,7 @@ class PongGame:
     def point(self, side, now):
         self.ball = None
         self.points += 1
+        self.point_to = side
         if self.solo:
             self.solo_balls -= 1
             if self.solo_balls <= 0:
@@ -340,4 +350,5 @@ class PongGame:
             "wall": WALL if self.solo else 0,
             "bar_w": BAR_W, "ball_size": BALL,
             "hits": self.hits, "walls": self.walls, "points": self.points,
+            "hit_pid": self.hit_pid, "point_to": self.point_to,
         }

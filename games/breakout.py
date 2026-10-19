@@ -19,7 +19,8 @@ Modes (Super Breakout):
 
 Same interface as games/snake.py. Inputs: {"key": "left"|"right"|"fire",
 "down": bool} for held keys (fire launches early), or {"key": "pos",
-"value": 0..1} from the on-screen knob (0 = far left).
+"value": 0..1} from the on-screen knob (0 = far left); with "drag": true
+(a finger dragged on a touch screen) the paddle jumps straight there.
 """
 
 import math
@@ -128,7 +129,9 @@ class BreakoutGame:
         self.level = 0
         self.next_shift = 0.0
         self.lost_reason = ""
-        self.ev = {"brick": 0, "band": 3, "paddle": 0, "wall": 0, "lost": 0, "level": 0}
+        # counters for the browser's beeps; *_pid says whose paddle/ball it was (for vibration)
+        self.ev = {"brick": 0, "band": 3, "paddle": 0, "wall": 0, "lost": 0, "level": 0,
+                   "brick_pid": None, "paddle_pid": None, "lost_pid": None}
 
     # ------------------------------------------------ settings
     def set_setting(self, key, value):
@@ -235,6 +238,8 @@ class BreakoutGame:
             except (TypeError, ValueError):
                 return
             pad.target = pad.w / 2 + v * (W - pad.w)
+            if data.get("drag"):
+                pad.x = pad.target         # dragging a finger: the paddle follows it at once
             return
         if key not in ("left", "right", "fire"):
             return
@@ -319,6 +324,7 @@ class BreakoutGame:
             self.players[b.owner].score += POINTS[bd]
         self.ev["brick"] += 1
         self.ev["band"] = bd
+        self.ev["brick_pid"] = b.owner
         # cavity: a trapped ball next to the broken brick is freed and joins the breaker
         for t in self.balls:
             if t.trapped:
@@ -383,6 +389,7 @@ class BreakoutGame:
                             b.vx, b.vy = sp * math.sin(ang), -sp * math.cos(ang)
                             b.y = top - h
                             self.ev["paddle"] += 1
+                            self.ev["paddle_pid"] = pad.pid
                             done = True
                             break
                     if done:
@@ -394,6 +401,7 @@ class BreakoutGame:
 
     def ball_lost(self, b, now):
         self.ev["lost"] += 1
+        self.ev["lost_pid"] = b.owner
         pl = self.players.get(b.owner)
         if not pl or pl.out:
             return
@@ -472,7 +480,8 @@ class BreakoutGame:
             "danger": DANGER_Y if self.mode == "progressive" else None,
             "shift_in": round(max(0.0, self.next_shift - now), 1) if self.mode == "progressive" else None,
             "rows": ["".join("1" if c else "0" for c in row) for row in self.rows],
-            "balls": [[r1(b.x), r1(b.y), b.owner, 1 if b.trapped else 0] for b in self.balls],
+            "balls": [[r1(b.x), r1(b.y), b.owner, 1 if b.trapped else 0,
+                       1 if b.attached else 0] for b in self.balls],
             "paddles": [{"pid": p.pid, "x": r1(p.x), "w": p.w, "ys": ys} for p in self.paddles.values()],
             "players": [{"id": p.id, "lives": p.lives, "score": p.score, "out": p.out} for p in self.players.values()],
             "ev": self.ev,

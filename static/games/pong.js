@@ -4,7 +4,7 @@
   let cw = 800, ch = 560, k = 0.8, sizedFor = "";
 
   function resize(api, g) {
-    const reserve = matchMedia("(pointer: coarse)").matches ? 255 : 170;
+    const reserve = api.touchDrag() ? 175 : matchMedia("(pointer: coarse)").matches ? 255 : 170;
     const ratio = g.w / g.h;
     const availW = Math.min(window.innerWidth - 32, 1100);
     const availH = window.innerHeight - reserve;
@@ -71,9 +71,18 @@
     }
 
     // bars: mine glow a little; names under them when several people play
+    const dv = api.dragValue("pos");
     for (const bar of g.bars) {
       const mine = bar.pids.includes(me);
+      // my bars go where my finger put them, without waiting for the server
+      if (bar.pids[0] === me && dv !== null) bar.y = bar.h / 2 + (1 - dv) * (g.h - bar.h);
       const x = (bar.x - g.bar_w / 2) * k, y = (bar.y - bar.h / 2) * k;
+      if (bar.pids[0] === me && api.dragging()) {
+        // a faint line beside the bar while the finger is down
+        ctx.fillStyle = "rgba(255,255,255,.28)";
+        const side = bar.x < g.w / 2 ? -1 : 1;
+        ctx.fillRect(x + (side < 0 ? -12 * k : (g.bar_w + 9) * k), y - bar.h * 0.2 * k, Math.max(2, 3 * k), bar.h * 1.4 * k);
+      }
       ctx.save();
       if (mine && st.players.length > 1) { ctx.shadowColor = "#ffffff"; ctx.shadowBlur = 10; }
       ctx.fillStyle = white;
@@ -142,6 +151,13 @@
     if (ng.hits > pg.hits) api.tone(459, 0, .05, "square", .07);
     if (ng.walls > pg.walls) api.tone(226, 0, .04, "square", .06);
     if (ng.points > pg.points) api.tone(490, 0, .26, "square", .07);
+    // touch screens: feel your own hits, and the points you lose
+    const me = api.me();
+    if (ng.hits > pg.hits && ng.hit_pid === me) api.buzz(28);
+    if (ng.points > pg.points && ng.point_to != null) {
+      const mySide = ng.sides[1].includes(me) ? 1 : ng.sides[0].includes(me) ? 0 : -1;
+      if (mySide >= 0 && ng.point_to !== mySide) { api.buzz([90, 60, 140]); api.flash(); }
+    }
     if (ng.phase === "countdown" && ng.countdown !== pg.countdown) api.play("tick");
     return false;
   }
@@ -171,6 +187,8 @@
       ],
     },
     help: "↑ ↓ (or W S) move your bar · Esc to exit",
+    // phones/tablets: drag up and down anywhere to move the bar (knob value 1 = top)
+    drag: { key: "pos", axis: "y", flip: true, gain: 1.6, hint: "Drag up and down anywhere to move your bar" },
   };
 
   window.GAMES = window.GAMES || {};

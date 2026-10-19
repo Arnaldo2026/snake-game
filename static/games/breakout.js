@@ -7,7 +7,8 @@
   const PADDLE_BLUE = "#38bdf8";
 
   function resize(api, g) {
-    const reserve = matchMedia("(pointer: coarse)").matches ? 255 : 170;
+    // touch: without the buttons the field grows, leaving a strip below it for the thumb
+    const reserve = api.touchDrag() ? 215 : matchMedia("(pointer: coarse)").matches ? 255 : 170;
     const ratio = g.w / g.h;
     const availW = Math.min(window.innerWidth - 32, 900);
     const availH = window.innerHeight - reserve;
@@ -91,9 +92,17 @@
       ctx.restore();
     }
 
+    let shift = 0;
     // paddles: blue like the cabinet's strip when alone, player colours when several
+    const dv = api.dragValue("pos");
     for (const pad of g.paddles) {
       const p = players[pad.pid];
+      // my paddle goes where my finger put it, without waiting for the server
+      if (pad.pid === me && pad.serverX === undefined) pad.serverX = pad.x;   // keep the server's value
+      if (pad.pid === me) {
+        pad.x = dv !== null ? pad.w / 2 + dv * (g.w - pad.w) : pad.serverX;
+        shift = pad.x - pad.serverX;
+      }
       const col = multi && p ? p.color : PADDLE_BLUE;
       ctx.save();
       if (pad.pid === me && multi) { ctx.shadowColor = col; ctx.shadowBlur = 10; }
@@ -102,6 +111,12 @@
         ctx.fillRect((pad.x - pad.w / 2) * k, (y - g.paddle_h / 2) * k, pad.w * k, g.paddle_h * k);
       }
       ctx.restore();
+      if (pad.pid === me && api.dragging()) {
+        // a faint line under the paddle while the finger is down
+        ctx.fillStyle = "rgba(255,255,255,.28)";
+        const y = (pad.ys[pad.ys.length - 1] + g.paddle_h / 2 + (multi ? 22 : 10)) * k;
+        ctx.fillRect((pad.x - pad.w * 0.7) * k, y, pad.w * 1.4 * k, Math.max(2, 3 * k));
+      }
       if (multi && p) {
         ctx.font = `600 ${Math.max(10, Math.round(12 * k))}px system-ui, sans-serif`;
         ctx.textAlign = "center";
@@ -116,8 +131,9 @@
     // balls (a trapped cavity ball blinks gently)
     const s = g.ball_size * k;
     const t = performance.now() / 1000;
-    for (const [x, y, owner, trapped] of g.balls) {
+    for (const [bx, y, owner, trapped, attached] of g.balls) {
       const p = players[owner];
+      const x = attached && owner === me ? bx + shift : bx;     // a ball waiting on my paddle moves with it
       ctx.globalAlpha = trapped ? (Math.sin(t * 5) > 0 ? 1 : .45) : 1;
       ctx.fillStyle = multi && p && !trapped ? p.color : "#f5f5f5";
       ctx.fillRect(x * k - s / 2, y * k - s / 2, s, s);
@@ -136,7 +152,7 @@
     api.$("timer").textContent = `${label} · wall ${g.level}`;
 
     const myPad = g.paddles.find(p => p.pid === me);
-    if (myPad) api.syncLever("pos", (myPad.x - myPad.w / 2) / (g.w - myPad.w));
+    if (myPad) api.syncLever("pos", ((myPad.serverX ?? myPad.x) - myPad.w / 2) / (g.w - myPad.w));
 
     let big = "", small = "", huge = false, dim = false;
     const me_ = g.players.find(p => p.id === me);
@@ -159,6 +175,11 @@
     if (ne.paddle > pe.paddle) api.tone(330, 0, .05, "square", .07);
     if (ne.wall > pe.wall) api.tone(220, 0, .04, "square", .05);
     if (ne.lost > pe.lost) api.tone(150, 0, .4, "sawtooth", .07, 60);
+    // touch screens: feel your own hits and losses
+    const me = api.me();
+    if (ne.paddle > pe.paddle && ne.paddle_pid === me) api.buzz(28);
+    else if (ne.brick > pe.brick && ne.brick_pid === me) api.buzz(12);
+    if (ne.lost > pe.lost && ne.lost_pid === me) { api.buzz([90, 60, 140]); api.flash(); }
     if (ne.level > pe.level && next.game.level > 1) [523, 659, 784, 1047].forEach((f, i) => api.tone(f, i * .1, .12, "triangle", .09));
     const g = next.game, pg = prev.game;
     if (g.phase === "countdown" && g.countdown !== pg.countdown) api.play("tick");
@@ -186,6 +207,8 @@
       ],
     },
     help: "← → move the paddle · Space to serve straight away · Esc to exit",
+    // phones/tablets: drag anywhere to move, tap to serve
+    drag: { key: "pos", axis: "x", gain: 1.5, tap: "fire", hint: "Drag anywhere to move the paddle · tap to serve" },
   };
 
   window.GAMES = window.GAMES || {};
