@@ -497,6 +497,23 @@
           { key: "fire", label: "&#9679;", sub: "FIRE", col: 3, row: 3, rows: 2 },
         ],
       },
+    }, {
+      id: "slide", label: "Slide",
+      hint: "Put a thumb down anywhere on the screen and slide it. Left half: up turns clockwise, down "
+          + "counter-clockwise. Right half: up thrust, down reverse; a quick tap fires. "
+          + "Back to where you started = let go. Small buttons for HYPERSPACE and FIRE stay at the bottom.",
+      // left half / right half of the screen: slide up or down from where the thumb lands
+      sticks: {
+        left: { up: "right", down: "left", upLabel: "⟳", downLabel: "⟲" },
+        right: { up: "thrust", down: "reverse", tap: "fire", upLabel: "▲", downLabel: "▼" },
+      },
+      pad: {
+        cols: "88px 16px 88px",
+        buttons: [
+          { key: "hyper", label: "&#10022;", sub: "hyperspace", col: 1, row: 1 },
+          { key: "fire", label: "&#9679;", sub: "fire", col: 3, row: 1 },
+        ],
+      },
     }],
     help: "← → rotate · ↑ thrust · Shift reverse · Space fire · ↓ hyperspace · I physics data · Esc to exit",
   };

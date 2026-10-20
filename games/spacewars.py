@@ -66,6 +66,7 @@ class Ship:
         self.out = False           # quit the match
         self.keys = set()
         self.hyper_req = False
+        self.fire_req = False      # a tap shorter than one physics step still fires once
         self.fire_cd = 0.0
         self.hyper_cd = 0.0
         self.hyper_until = 0.0     # > now while in hyperspace
@@ -269,6 +270,8 @@ class SpaceWarsGame:
         if data.get("down"):
             if key == "hyper" and "hyper" not in s.keys:
                 s.hyper_req = True
+            if key == "fire" and "fire" not in s.keys:
+                s.fire_req = True
             s.keys.add(key)
         else:
             s.keys.discard(key)
@@ -440,7 +443,8 @@ class SpaceWarsGame:
                 self.explode(s, now, "star")
                 continue
 
-            if playing and "fire" in s.keys and s.fire_cd <= 0:
+            if playing and ("fire" in s.keys or s.fire_req) and s.fire_cd <= 0:
+                s.fire_req = False
                 mine = sum(1 for t in self.torps if t.owner == s.id)
                 if mine < TORP_MAX:
                     nx, ny = math.cos(s.a), math.sin(s.a)
