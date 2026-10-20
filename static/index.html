@@ -539,6 +539,7 @@
     }
     if (msg.type === "joined") {
       me = msg.you; code = msg.code;
+      lastAspect = 0; reportScreen();
       $("homeErr").textContent = "";
       dismissed.clear();
       history.replaceState(null, "", `?room=${code}`);
@@ -820,11 +821,13 @@
     }).join("");
   }
   function setupControls(id, mod) {
-    const want = `${id}:${landscape()}`;
+    const want = `${id}:${landscape()}:${padLayout(id)}`;
     if (controlsFor === want) return;
     controlsFor = want;
     releaseAll();
     controls = Object.assign({ keys: {}, pad: { buttons: [] } }, mod.controls || {});
+    const alt = controls.layouts && controls.layouts.find(l => l.id === padLayout(id));
+    if (alt) controls = Object.assign({}, controls, { pad: alt.pad, landscapeSplit: alt.landscapeSplit });
     const pad = controls.pad;
     if (landscape() && pad.buttons.length) {
       const [l, r] = splitPad(pad);
@@ -975,8 +978,30 @@
       const hud = document.body.classList.contains("in-game") ? 0 : ($("hud").offsetHeight || 30);
       return { w: Math.max(200, window.innerWidth - 20 - pads), h: Math.max(160, window.innerHeight - hud - 16) };
     }
-    return { w: Math.min(window.innerWidth - 32, maxW), h: window.innerHeight - reserve };
+    let h = window.innerHeight - reserve;
+    if (isTouch() && $("pad").offsetHeight) {
+      const top = $("wrap").getBoundingClientRect().top + window.scrollY;
+      h = Math.min(h, window.innerHeight - top - $("pad").offsetHeight - 36);
+    }
+    return { w: Math.min(window.innerWidth - 32, maxW), h };
   };
+
+  // Tell the server the shape of the space this screen has for a board (Space Wars' Auto arena uses it
+  // to pick an arena that suits everybody). Estimated from the window, as the board isn't shown yet.
+  let lastAspect = 0, aspectTimer = null;
+  function reportScreen() {
+    clearTimeout(aspectTimer);
+    aspectTimer = setTimeout(() => {
+      const W = window.innerWidth, H = window.innerHeight;
+      let w, h;
+      if (landscape()) { w = W - 20 - 300; h = H - 16; }              // buttons left and right
+      else if (isTouch()) { w = W - 32; h = H - 330; }                  // header, scores, buttons below
+      else { w = Math.min(W - 32, 1100); h = H - 170; }
+      const aspect = Math.round(Math.max(0.3, Math.min(3, w / Math.max(100, h))) * 100) / 100;
+      if (aspect !== lastAspect && me) { lastAspect = aspect; send({ type: "screen", aspect }); }
+    }, 250);
+  }
+  window.addEventListener("resize", reportScreen);
 
   // ---------------------------------------------------------- touch screens: drag anywhere
   // Games can declare  drag: {key, axis: "x"|"y", flip, gain, tap, hint}.  On a phone or tablet a finger
@@ -1017,6 +1042,8 @@
     return SENS.some(([x]) => x === v) ? v : 1;
   }
   const SCREEN = [["auto", "Auto"], ["on", "Always"], ["off", "Never"]];
+  // a game can offer other button layouts (controls.layouts: [{id, label, hint, pad}]); "classic" is its pad
+  function padLayout(gid) { return store.get(`touch.layout.${gid}`) || "classic"; }
   function renderTouchSetting(mod) {
     const show = isTouch() && mod && mod.controls && mod.controls.drag;
     let html = `<div><div class="label">On-screen controls <span class="tag">(this device only)</span></div>
@@ -1024,6 +1051,15 @@
         `<button data-screen="${v}" class="${v === screenPref ? "on" : ""}">${label}</button>`).join("")}</div>
       <div class="hint">Auto shows them on phones and tablets. Choose Always for a touch screen without a keyboard
         that isn't recognised (e.g. a car's screen).</div></div>`;
+    const layouts = isTouch() && mod && mod.controls && mod.controls.layouts;
+    if (layouts) {
+      const cur = padLayout(st.game_id);
+      const all = [{ id: "classic", label: "Classic", hint: "The original button set." }, ...layouts];
+      const pick = all.find(l => l.id === cur) || all[0];
+      html += `<div><div class="label">Button layout <span class="tag">(this device only)</span></div>
+        <div class="seg">${all.map(l => `<button data-layout="${esc(l.id)}" class="${l.id === pick.id ? "on" : ""}">${esc(l.label)}</button>`).join("")}</div>
+        <div class="hint">${esc(pick.hint || "")}</div></div>`;
+    }
     if (show) {
       const cur = sensitivity(st.game_id);
       html += `<div><div class="label">Drag sensitivity <span class="tag">(your phone only)</span></div>
@@ -1035,13 +1071,19 @@
     if ($("lbTouch").dataset.html !== html) { $("lbTouch").innerHTML = html; $("lbTouch").dataset.html = html; }
   }
   $("lbTouch").addEventListener("click", e => {
-    const b = e.target.closest("button[data-sens], button[data-screen]");
+    const b = e.target.closest("button[data-sens], button[data-screen], button[data-layout]");
     if (!b || !st) return;
+    if (b.dataset.layout) {
+      store.set(`touch.layout.${st.game_id}`, b.dataset.layout);
+      renderLobby();
+      return;
+    }
     if (b.dataset.screen) {
       screenPref = b.dataset.screen;
       store.set("ui.touch", screenPref);
       setLayout();
       relayout();
+      lastAspect = 0; reportScreen();
       return;
     }
     store.set(`touch.sens.${st.game_id}`, b.dataset.sens);

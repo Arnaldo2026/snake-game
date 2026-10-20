@@ -54,6 +54,7 @@ class Player:
         self.wins = 0
         self.waiting = False       # arrived during a match, waits to be let in
         self.quit = False          # left the current match
+        self.aspect = None         # shape of the space this browser has for a board (width / height)
 
 
 class Room:
@@ -261,6 +262,12 @@ async def ws_handler(request):
             if kind == "input":
                 if room.state == "match" and not me.waiting:
                     room.game.input(me.id, data)
+            elif kind == "screen":
+                # the browser tells us the shape of its board space (games like Space Wars use it)
+                try:
+                    me.aspect = min(3.0, max(0.3, float(data.get("aspect"))))
+                except (TypeError, ValueError):
+                    pass
             elif kind == "quit":
                 room.quit_match(me)
             elif kind == "leave":

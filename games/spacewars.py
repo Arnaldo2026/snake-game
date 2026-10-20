@@ -13,7 +13,8 @@ player exits. Optional asteroids (a few, set by the host) bounce off the
 borders, feel the star's gravity, can be shot and destroy ships they hit.
 
 Same interface as games/snake.py. Inputs: {"key": <name>, "down": bool}
-with key one of left, right, thrust, fire, hyper (held-button controls).
+with key one of left, right, thrust, reverse, fire, hyper (held-button controls).
+"reverse" is a weaker retro-thrust out of the nose, for braking.
 """
 
 import math
@@ -22,6 +23,7 @@ import time
 
 H = 1000.0                     # world height; the width depends on the arena setting
 ARENA = {"square": 1000.0, "wide": 1333.0, "screen": 1778.0}   # 1:1, 4:3, 16:9
+AUTO_DEFAULT = 1333.0          # Auto arena when no screen shape is known yet
 CY = H / 2                     # the star sits in the middle
 DT = 1 / 30                    # physics step and broadcast rate
 SHIP_R = 14
@@ -29,6 +31,7 @@ STAR_R = 22
 ROT_SPEED = 3.6                # rad/s
 SOFTEN = 40.0                  # gravity uses r >= this, so the pull never becomes infinite
 THRUST = 240.0                 # units/s²
+REVERSE = 150.0                # retro-thrust (braking), units/s²
 MAX_SPEED = 420.0
 TORP_SPEED = 430.0
 TORP_LIFE = 1.6                # seconds
@@ -49,7 +52,7 @@ ROCK_GRAVITY = 0.45            # asteroids feel less pull than ships
 ROCK_RESPAWN = 3.0             # a destroyed asteroid is replaced after this
 
 GRAVITY = {"off": 0.0, "weak": 2.5e6, "normal": 5e6, "strong": 1e7, "negative": -4e6}
-KEYS = ("left", "right", "thrust", "fire", "hyper")
+KEYS = ("left", "right", "thrust", "reverse", "fire", "hyper")
 
 
 class Ship:
@@ -110,9 +113,11 @@ class SpaceWarsGame:
                    "normal": "Use the pull to orbit, thrust to escape.",
                    "strong": "Hard to escape – stay moving or fall in.",
                    "negative": "The star pushes you away. Don't touch it anyway."}},
-        {"key": "arena", "label": "Arena", "default": "wide",
-         "options": [["square", "Square"], ["wide", "Wide 4:3"], ["screen", "Widescreen 16:9"]],
-         "hints": {"square": "Best for phones held upright.",
+        {"key": "arena", "label": "Arena", "default": "auto",
+         "options": [["auto", "Auto"], ["square", "Square"], ["wide", "Wide 4:3"], ["screen", "Widescreen 16:9"]],
+         "hints": {"auto": "Alone: shaped like your screen. Together: shaped to suit the narrowest screen, "
+                           "so everyone sees the whole arena at a good size.",
+                   "square": "Best for phones held upright.",
                    "wide": "Shaped like the 1977 cabinet screen – fits PCs and tablets.",
                    "screen": "Fills a phone held sideways or a widescreen monitor."}},
         {"key": "edges", "label": "Screen edges", "default": "wrap",
@@ -135,6 +140,7 @@ class SpaceWarsGame:
     def __init__(self, room):
         self.room = room
         self.settings = {s["key"]: s["default"] for s in self.SETTINGS}
+        self.auto_w = None         # Auto arena: the width chosen when the match started
         self.running = False
         self.results = None
         self.phase = "idle"        # idle | countdown | playing | roundover | over
@@ -159,7 +165,19 @@ class SpaceWarsGame:
 
     @property
     def W(self):
+        if self.settings.get("arena") == "auto":
+            return self.auto_w or self.fit_width()
         return ARENA.get(self.settings.get("arena"), 1000.0)
+
+    def fit_width(self, pids=None):
+        # each browser reports the shape (width / height) of the space it has for the board;
+        # the arena takes the narrowest one, between square and 16:9
+        players = self.room.players
+        ids = pids if pids is not None else [p for p in players if not players[p].waiting]
+        shapes = [players[p].aspect for p in ids if p in players and getattr(players[p], "aspect", None)]
+        if not shapes:
+            return AUTO_DEFAULT
+        return round(1000.0 * min(16 / 9, max(1.0, min(shapes))))
 
     @property
     def CX(self):
@@ -179,6 +197,7 @@ class SpaceWarsGame:
     # ------------------------------------------------ match flow
     def start(self, pids):
         self.results = None
+        self.auto_w = self.fit_width(pids)          # fixed for the whole match
         self.ships = {}
         for pid in pids:
             s = Ship(pid)
@@ -393,12 +412,16 @@ class SpaceWarsGame:
                         continue
                     s.hyper_until = now + HYPER_TIME
                     s.keys.discard("thrust")
+                    s.keys.discard("reverse")
                     continue
 
             if "left" in s.keys:
                 s.a -= ROT_SPEED * dt
             if "right" in s.keys:
                 s.a += ROT_SPEED * dt
+            if "reverse" in s.keys:
+                s.vx -= math.cos(s.a) * REVERSE * dt
+                s.vy -= math.sin(s.a) * REVERSE * dt
             if "thrust" in s.keys:
                 s.vx += math.cos(s.a) * THRUST * dt
                 s.vy += math.sin(s.a) * THRUST * dt
@@ -558,7 +581,7 @@ class SpaceWarsGame:
             "solo": self.solo,
             "rocks_on": self.settings["asteroids"] > 0,
             # the numbers behind the physics, for the browser's data pad
-            "phys": {"gm": self.g, "thrust": THRUST, "soften": SOFTEN, "vmax": MAX_SPEED, "dt": round(DT, 5),
+            "phys": {"gm": self.g, "thrust": THRUST, "reverse": REVERSE, "soften": SOFTEN, "vmax": MAX_SPEED, "dt": round(DT, 5),
                      "star_r": STAR_R, "ship_r": SHIP_R, "edges": self.settings["edges"]},
             "rocks": [[r(k.x), r(k.y), r(k.r), k.seed, round(k.rot, 2)] for k in self.rocks],
             "ships": [{
@@ -566,6 +589,7 @@ class SpaceWarsGame:
                 "alive": s.alive, "out": s.out, "points": s.points, "deaths": s.deaths,
                 "respawn": round(max(0.0, s.respawn_at - now), 1) if s.respawn_at else None,
                 "thrust": s.alive and "thrust" in s.keys and not s.hyper_until,
+                "reverse": s.alive and "reverse" in s.keys and not s.hyper_until,
                 "hyper": bool(s.hyper_until),
             } for s in self.ships.values()],
             "torps": [[r(t.x), r(t.y), t.owner] for t in self.torps],

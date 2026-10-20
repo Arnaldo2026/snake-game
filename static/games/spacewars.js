@@ -14,7 +14,7 @@
   function resize(api) {
     // room for header + scoreboard, and below the board either the touch buttons or the keys hint
     const reserve = document.body.classList.contains("touch-ui") ? 255 : 170;
-    const { w: availW, h: availH } = api.space(960, reserve);
+    const { w: availW, h: availH } = api.space(1100, reserve);
     const sc = Math.max(240 / WH, Math.min(availW / WW, availH / WH));
     const key = `${sc.toFixed(4)}:${WW}:${window.devicePixelRatio || 1}`;
     if (key === sizedFor) return;
@@ -51,6 +51,16 @@
       ctx.shadowColor = "#fbbf24";
       ctx.beginPath();
       ctx.moveTo(-7, -4); ctx.lineTo(-7 - len, 0); ctx.lineTo(-7, 4);
+      ctx.stroke();
+    }
+    if (s.reverse) {
+      // retro-rockets: two small flames forward, beside the nose
+      const len = 6 + Math.random() * 6;
+      ctx.strokeStyle = "#a5f3fc";
+      ctx.shadowColor = "#22d3ee";
+      ctx.beginPath();
+      ctx.moveTo(4, -6); ctx.lineTo(8 + len, -8);
+      ctx.moveTo(4, 6); ctx.lineTo(8 + len, 8);
       ctx.stroke();
     }
     ctx.restore();
@@ -178,6 +188,11 @@
     return { pts, hit };
   }
 
+  // engine acceleration along the nose (u/s²): forward thrust, minus the weaker retro-thrust
+  function engine(s, P) {
+    return (s.thrust ? P.thrust : 0) - (s.reverse ? (P.reverse || 0) : 0);
+  }
+
   function arrow(ctx, x, y, dx, dy, color, label, dashed) {
     const len = Math.hypot(dx, dy);
     if (len < 2) return;
@@ -233,10 +248,10 @@
     ctx.restore();
     // vectors
     const [gx, gy] = accel(P, s.x, s.y);
-    const tx = s.thrust ? Math.cos(s.a) * P.thrust : 0, ty = s.thrust ? Math.sin(s.a) * P.thrust : 0;
+    const ta = engine(s, P), tx = Math.cos(s.a) * ta, ty = Math.sin(s.a) * ta;
     arrow(ctx, s.x, s.y, s.vx * VEL_S, s.vy * VEL_S, COL.v, "v");
     if (P.gm) arrow(ctx, s.x, s.y, gx * ARROW_S, gy * ARROW_S, COL.g, "g");
-    if (s.thrust) {
+    if (ta) {
       arrow(ctx, s.x, s.y, tx * ARROW_S, ty * ARROW_S, COL.t, "T");
       if (P.gm) arrow(ctx, s.x, s.y, (gx + tx) * ARROW_S, (gy + ty) * ARROW_S, COL.n, "a", true);
     }
@@ -252,9 +267,8 @@
     const vr = r ? (rx * vx + ry * vy) / r : 0, vt = r ? (rx * vy - ry * vx) / r : 0;
     const reff = Math.max(r, P.soften);
     const ga = mu ? Math.abs(mu) / (reff * reff) : 0;
-    const ta = s.thrust ? P.thrust : 0;
     const [gx, gy] = accel(P, s.x, s.y);
-    const tx = s.thrust ? Math.cos(s.a) * P.thrust : 0, ty = s.thrust ? Math.sin(s.a) * P.thrust : 0;
+    const ta = engine(s, P), tx = Math.cos(s.a) * ta, ty = Math.sin(s.a) * ta;
     const anet = Math.hypot(gx + tx, gy + ty);
     const c = (k, t) => `<span style="color:${COL[k]}">${t}</span>`;
     const row = (a, b) => `<div style="display:flex;justify-content:space-between;gap:10px"><span>${a}</span><span>${b}</span></div>`;
@@ -267,7 +281,7 @@
       row(`&nbsp;&nbsp;v<sub>r</sub> · v<sub>t</sub>`, `${num(vr)} · ${num(vt)}`),
     ];
     if (mu) lines.push(row(c("g", mu > 0 ? "g = GM/r²" : "g = |GM|/r²"), `${num(ga)} u/s² ${mu > 0 ? "→ star" : "← away"}`));
-    lines.push(row(c("t", "thrust T"), `${s.thrust ? num(ta, 0) : "0"} u/s² ${s.thrust ? "ON" : "off"}`));
+    lines.push(row(c("t", "thrust T"), `${num(ta, 0)} u/s² ${ta > 0 ? "forward" : ta < 0 ? "reverse" : "off"}`));
     if (mu) lines.push(row(c("n", "|a| = |g + T|"), `${num(anet)} u/s²`));
     lines.push(row("F = m·a", `m = 1 → F = ${num(anet)}`));
     if (mu > 0) {
@@ -454,6 +468,7 @@
     keys: {
       ArrowLeft: "left", ArrowRight: "right", ArrowUp: "thrust", ArrowDown: "hyper", " ": "fire",
       a: "left", d: "right", w: "thrust", s: "hyper", Control: "fire", k: "fire",
+      Shift: "reverse", r: "reverse",
     },
     pad: {
       cols: "64px 64px 12px 72px 72px",
@@ -463,9 +478,27 @@
         { key: "thrust", label: "&#9650;", sub: "thrust", col: 4, row: 1 },
         { key: "fire", label: "&#9679;", sub: "fire", col: 5, row: 1 },
         { key: "hyper", label: "&#10022;", sub: "hyperspace", col: 1, span: 2, row: 2 },
+        { key: "reverse", label: "&#9660;", sub: "reverse", col: 4, span: 2, row: 2 },
       ],
     },
-    help: "← → rotate · ↑ thrust · Space fire · ↓ hyperspace · I physics data · Esc to exit",
+    // phones/tablets can switch (in the room) to a two-thumb layout: left thumb turns, right thumb pushes
+    layouts: [{
+      id: "thumbs", label: "Thumbs",
+      hint: "Left thumb: turn clockwise (top) or counter-clockwise, big HYPERSPACE below. "
+          + "Right thumb: thrust (top) or reverse, big FIRE below.",
+      pad: {
+        cols: "104px 16px 104px",
+        buttons: [
+          { key: "right", name: "turn clockwise", label: "&#10227;", sub: "turn", col: 1, row: 1 },
+          { key: "left", name: "turn counter-clockwise", label: "&#10226;", sub: "turn", col: 1, row: 2 },
+          { key: "hyper", label: "&#10022;", sub: "HYPERSPACE", col: 1, row: 3, rows: 2 },
+          { key: "thrust", label: "&#9650;", sub: "thrust", col: 3, row: 1 },
+          { key: "reverse", label: "&#9660;", sub: "reverse", col: 3, row: 2 },
+          { key: "fire", label: "&#9679;", sub: "FIRE", col: 3, row: 3, rows: 2 },
+        ],
+      },
+    }],
+    help: "← → rotate · ↑ thrust · Shift reverse · Space fire · ↓ hyperspace · I physics data · Esc to exit",
   };
   // a button in the top bar (and the I key) opens the physics data pad
   const tools = [{ id: "pad", label: "📐", title: "Physics data pad (I)", key: "i" }];
