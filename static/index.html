@@ -214,6 +214,18 @@
     body.in-lobby #gallery { display: none; }
   }
 
+  /* home: public rooms anyone can join */
+  #openRooms { display: flex; flex-direction: column; gap: 6px; max-height: 230px; overflow-y: auto; }
+  #openRooms li { gap: 8px; padding: 7px 8px 7px 12px; }
+  #openRooms li .what { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  #openRooms li .what b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #openRooms li .what span { font-size: 12px; color: var(--muted); }
+  #openRooms li button { padding: 7px 14px; font-size: 14px; flex: none; }
+  #openRooms .empty { font-size: 13px; color: var(--muted); padding: 2px 0; }
+  .pubtag { font-size: 11px; font-weight: 700; letter-spacing: 1px; padding: 2px 7px; border-radius: 999px;
+            background: var(--btn); color: var(--muted); }
+  .pubtag.on { background: rgba(74, 222, 128, .15); color: var(--accent); }
+
   #modal { position: fixed; inset: 0; background: rgba(0, 0, 0, .6); display: flex; align-items: center;
            justify-content: center; padding: 16px; z-index: 30; }
   #modal .card { max-width: 340px; }
@@ -236,13 +248,15 @@
     <div class="label">Game</div>
     <select id="inGame"></select>
     <button id="btnCreate" class="primary">Create a room</button>
-    <div class="or">or join a friend's room</div>
+    <div class="or">or join a room with its code</div>
     <div class="row">
       <input id="inCode" maxlength="4" placeholder="CODE" autocomplete="off" autocapitalize="characters"
              style="text-transform: uppercase; letter-spacing: 4px; text-align: center;">
       <button id="btnJoin">Join</button>
     </div>
     <div id="homeErr" class="err"></div>
+    <div class="label" style="margin-top:6px">Open rooms</div>
+    <ul id="openRooms"><li class="empty">Looking for rooms…</li></ul>
   </section>
 
   <!-- ============ LOBBY ============ -->
@@ -259,6 +273,7 @@
       <button id="btnCopy">Copy</button>
       <button id="btnShare" class="hidden">Share</button>
     </div>
+    <div id="lbVis"></div>
 
     <div id="lbLive" class="hidden"></div>
 
@@ -537,6 +552,11 @@
       renderGallery();
       return;
     }
+    if (msg.type === "rooms") {
+      publicRooms = msg.rooms || [];
+      renderRooms();
+      return;
+    }
     if (msg.type === "joined") {
       me = msg.you; code = msg.code;
       lastAspect = 0; reportScreen();
@@ -651,6 +671,27 @@
     renderAdmit();
   };
 
+  // ---------------------------------------------------------- home: public rooms
+  let publicRooms = null;
+  function renderRooms() {
+    if (!publicRooms) return;
+    const html = !publicRooms.length
+      ? `<li class="empty">No public rooms right now. Create one and set it to Public in the room.</li>`
+      : publicRooms.map(r => {
+          const full = r.players >= r.max;
+          return `<li><div class="what"><b>${esc(r.game)}</b>
+            <span>${r.host ? `${esc(r.host)}'s room · ` : ""}${r.players}/${r.max} players · ${r.playing ? "match on" : "waiting to start"}</span></div>
+            <button data-room="${esc(r.code)}" ${full ? "disabled" : ""}>${full ? "Full" : "Join"}</button></li>`;
+        }).join("");
+    if ($("openRooms").dataset.html !== html) { $("openRooms").innerHTML = html; $("openRooms").dataset.html = html; }
+  }
+  $("openRooms").addEventListener("click", e => {
+    const b = e.target.closest("button[data-room]");
+    if (!b || b.disabled) return;
+    $("inCode").value = b.dataset.room;
+    $("btnJoin").click();          // same checks as joining with a code (name needed)
+  });
+
   // ---------------------------------------------------------- lobby
   function shareLink() { return `${location.origin}${location.pathname}?room=${st.code}`; }
 
@@ -669,6 +710,17 @@
       new QRCode($("qr"), { text: shareLink(), width: 192, height: 192, correctLevel: QRCode.CorrectLevel.M });
       qrFor = st.code;
     }
+
+    // private (code only) or public (listed on the home screen): the host decides
+    const pub = !!st.public;
+    const visHtml = isHost
+      ? `<div><div class="label">Room</div><div class="seg">
+          <button data-public="0" class="${pub ? "" : "on"}">🔒 Private</button>
+          <button data-public="1" class="${pub ? "on" : ""}">🌐 Public</button></div>
+          <div class="hint">${pub ? "Listed on everyone's home screen – anyone can join." : "Not listed – only people with the code or link can join."}</div></div>`
+      : `<div class="hint"><span class="pubtag${pub ? " on" : ""}">${pub ? "PUBLIC" : "PRIVATE"}</span>
+          ${pub ? "This room is listed on the home screen." : "Only people with the code can join."}</div>`;
+    if ($("lbVis").dataset.html !== visHtml) { $("lbVis").innerHTML = visHtml; $("lbVis").dataset.html = visHtml; }
 
     $("lbLive").classList.toggle("hidden", !live);
     if (live) {
@@ -731,6 +783,10 @@
     send({ type: "setting", key: s.key, value: s.options[+b.dataset.oi][0] });
   });
   $("lbGame").addEventListener("change", e => send({ type: "game", id: e.target.value }));
+  $("lbVis").addEventListener("click", e => {
+    const b = e.target.closest("button[data-public]");
+    if (b) send({ type: "visibility", public: b.dataset.public === "1" });
+  });
 
   $("btnCreate").onclick = () => {
     if (!myName()) { $("homeErr").textContent = "Type your name first."; $("inName").focus(); return; }

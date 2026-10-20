@@ -6,6 +6,9 @@ host: they choose the game and its settings, and start each match. The game
 rules live in the games/ package; this file handles everything shared:
 rooms, players, host, lobby, notices, and players arriving mid-match.
 
+Rooms are private unless the host makes them public: public rooms are listed
+live on everyone's home screen; private ones are reached only with the code.
+
 Someone joining while a match is running waits in the room. Everyone gets a
 notice, and the host can restart with them, let them in now (if the game
 allows dropping in) or let them wait for the next match.
@@ -42,6 +45,7 @@ HERE = Path(__file__).resolve().parent
 STATIC = HERE / "static"
 
 ROOMS = {}
+WATCHERS = set()                # sockets on the home screen (not in a room): they get the public room list
 _ids = itertools.count(1)
 
 
@@ -67,6 +71,7 @@ class Room:
         self.notices = []          # sent with the next state message
         self.dirty = True
         self.task = None
+        self.public = False        # listed on the home screen (host's choice); private = code only
         self.set_game(game_id)
 
     def set_game(self, game_id):
@@ -154,6 +159,7 @@ class Room:
             "type": "state",
             "code": self.code,
             "state": self.state,
+            "public": self.public,
             "host": self.host,
             "games": CATALOG,
             "game_id": self.game_id,
@@ -207,6 +213,38 @@ def new_room(game_id):
     return room
 
 
+def public_rooms():
+    # what the home screen shows: no player names besides the host's
+    out = []
+    for room in ROOMS.values():
+        if not room.public or not room.players:
+            continue
+        host = room.players.get(room.host)
+        out.append({"code": room.code, "game_id": room.game_id, "game": room.game.name,
+                    "host": host.name if host else "", "players": len(room.players),
+                    "max": room.game.max_players, "playing": room.state == "match"})
+    out.sort(key=lambda r: (r["players"] >= r["max"], r["playing"], r["code"]))
+    return out
+
+
+async def announce_rooms():
+    # every second: if the public list changed, send it to everyone on the home screen
+    last = None
+    while True:
+        try:
+            msg = json.dumps({"type": "rooms", "rooms": public_rooms()})
+            if msg != last:
+                last = msg
+                for ws in list(WATCHERS):
+                    try:
+                        await ws.send_str(msg)
+                    except Exception:
+                        WATCHERS.discard(ws)
+        except Exception:
+            traceback.print_exc()
+        await asyncio.sleep(1.0)
+
+
 def clean_name(raw, room):
     name = " ".join(str(raw or "").split())[:NAME_MAX]
     return name or f"Player {len(room.players) + 1}"
@@ -223,6 +261,8 @@ async def ws_handler(request):
     room = None
     me = None
     await ws.send_json({"type": "hello", "games": CATALOG})   # game list for the home screen
+    await ws.send_json({"type": "rooms", "rooms": public_rooms()})
+    WATCHERS.add(ws)
 
     async def error(text):
         await ws.send_json({"type": "error", "msg": text})
@@ -255,6 +295,7 @@ async def ws_handler(request):
                 else:
                     continue
                 me = room.add(clean_name(data.get("name"), room), ws)
+                WATCHERS.discard(ws)
                 await ws.send_json({"type": "joined", "code": room.code, "you": me.id})
                 continue
 
@@ -272,6 +313,9 @@ async def ws_handler(request):
                 room.quit_match(me)
             elif kind == "leave":
                 break
+            elif kind == "visibility" and is_host:
+                room.public = bool(data.get("public"))
+                room.dirty = True
             elif kind == "admit" and is_host:
                 room.admit(data.get("pid"), data.get("action"))
             elif is_host and room.state == "lobby":
@@ -283,6 +327,7 @@ async def ws_handler(request):
                 elif kind == "start":
                     room.start_match()
     finally:
+        WATCHERS.discard(ws)
         if room and me:
             room.remove(me.id)
             if not room.players:
@@ -317,6 +362,7 @@ async def serve(port):
         print(f"PORT_IN_USE: port {port} is already in use", flush=True)
         await runner.cleanup()
         sys.exit(1)
+    announcer = asyncio.create_task(announce_rooms())   # kept referenced while the server runs
     # printed only once the port is really open (the launcher waits for this line)
     print("Snake server running", flush=True)
     print(f"  This PC : http://localhost:{port}", flush=True)
