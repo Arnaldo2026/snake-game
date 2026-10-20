@@ -16,8 +16,7 @@
 
   function resize(api) {
     const reserve = document.body.classList.contains("touch-ui") ? 255 : 170;
-    const availW = Math.min(window.innerWidth - 32, 1100);
-    const availH = window.innerHeight - reserve;
+    const { w: availW, h: availH } = api.space(1100, reserve);
     const w = Math.max(300, Math.floor(Math.min(availW, availH * 1.6)));
     const key = `${w}:${window.devicePixelRatio || 1}`;
     if (key === sizedFor) return;

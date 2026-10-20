@@ -18,8 +18,7 @@
     const { canvas, ctx } = api;
     // room for header + scoreboard, and below the board either the touch buttons or the keys hint
     const reserve = document.body.classList.contains("touch-ui") ? 255 : 170;
-    const availW = Math.min(window.innerWidth - 32, 960);
-    const availH = window.innerHeight - reserve;
+    const { w: availW, h: availH } = api.space(960, reserve);
     const c = Math.max(8, Math.floor(Math.min(availW / g.w, availH / g.h)));
     const key = `${c}:${g.w}:${g.h}:${window.innerWidth}`;
     if (key === sizedFor) return;
@@ -168,6 +167,7 @@
     swipe: true,
     keys: { ArrowUp: "up", ArrowDown: "down", ArrowLeft: "left", ArrowRight: "right",
             w: "up", s: "down", a: "left", d: "right" },
+    landscapeSplit: 0,            // sideways: keep all buttons together on the right
     pad: {
       cols: "repeat(3, 64px)",
       buttons: [

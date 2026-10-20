@@ -108,10 +108,21 @@
   #msg .small { color: var(--text); font-size: 15px; opacity: .85; text-shadow: 0 1px 6px rgba(0,0,0,.7); }
 
   /* on-screen buttons, laid out by each game (touch devices only) */
-  #pad { display: none; gap: 8px; grid-auto-rows: 54px; }
-  #pad button { font-size: 22px; touch-action: none; padding: 0; user-select: none; -webkit-user-select: none; }
-  #pad button.held { background: var(--btn-on); }
-  #pad button small { display: block; font-size: 10px; color: var(--muted); }
+  #stage { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+  .pad { display: none; gap: 8px; grid-auto-rows: 54px; }
+  .pad button { font-size: 22px; touch-action: none; padding: 0; user-select: none; -webkit-user-select: none; }
+  .pad button.held { background: var(--btn-on); }
+  .pad button small { display: block; font-size: 10px; color: var(--muted); }
+  /* phone or tablet held sideways: no header while playing, controls left and right of the board */
+  body.landscape.in-game { padding: 4px 10px 4px; gap: 4px; }
+  body.landscape.in-game > header { display: none; }
+  body.landscape.in-game #game { gap: 4px; }
+  body.landscape #hud { max-width: none; min-height: 0; }
+  body.landscape #hud .chip { padding: 2px 8px 2px 5px; font-size: 12px; }
+  body.landscape #timer { font-size: 14px; }
+  body.landscape #stage { flex-direction: row; align-items: flex-end; justify-content: center; gap: 14px; width: 100%; }
+  body.landscape .pad { flex: none; }
+  body.landscape #dragHint, body.landscape #status:empty { display: none !important; }
   /* a vertical lever (e.g. a variable throttle) */
   .lever { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
            background: var(--btn); border-radius: 10px; padding: 6px 0; touch-action: none; }
@@ -122,6 +133,7 @@
   .lever.h input { writing-mode: horizontal-tb; direction: ltr; -webkit-appearance: auto; appearance: auto;
                    width: 100%; height: 36px; flex: none; }
   body.touch-ui #pad { display: grid; }
+  body.touch-ui.landscape #padL:not(:empty) { display: grid; }
   body.touch-ui #keysHelp { display: none; }
   #keysHelp { text-align: center; }
 
@@ -132,7 +144,7 @@
   body.has-drag #touchBar { display: flex; }
   body.has-drag #dragHint { display: block; }
   html.drag-mode, body.drag-mode { touch-action: none; overscroll-behavior: none; }
-  body.drag-mode #pad { display: none !important; }
+  body.drag-mode .pad { display: none !important; }
   #wrap.flash::after { content: ""; position: absolute; inset: 0; border-radius: 10px; pointer-events: none;
                        box-shadow: inset 0 0 0 4px #ef4444, inset 0 0 48px rgba(239,68,68,.65); animation: flash .7s forwards; }
   @keyframes flash { from { opacity: 1; } to { opacity: 0; } }
@@ -183,6 +195,14 @@
     .tile .tname { bottom: 14px; font-size: 18px; letter-spacing: 1px; padding: 0 4px; }
     .tile.empty span { font-size: 12px; letter-spacing: 2px; }
     body.in-lobby #gallery { display: none; }                   /* the room screen scrolls on phones */
+  }
+  @media (max-height: 500px) and (orientation: landscape) {
+    /* phones held sideways: same idea, a row of four cartridges below the form */
+    #gallery { position: static; order: 99; width: calc(100% + 32px); margin: 6px -16px -16px;
+               grid-template-columns: repeat(4, 1fr) !important; grid-template-rows: none; grid-auto-rows: 150px; }
+    .tile .tname { bottom: 12px; font-size: 18px; letter-spacing: 1px; padding: 0 4px; }
+    .tile.empty span { font-size: 12px; letter-spacing: 2px; }
+    body.in-lobby #gallery { display: none; }
   }
 
   #modal { position: fixed; inset: 0; background: rgba(0, 0, 0, .6); display: flex; align-items: center;
@@ -257,12 +277,15 @@
       <div id="chips"></div>
       <div id="hudRight"><div id="timer"></div><span id="gameTools"></span><span id="touchBar"><button id="btnTouchMode"></button><button id="btnVibe"></button></span><button id="btnExit">Exit</button></div>
     </div>
+    <div id="stage">
+    <div id="padL" class="pad"></div>
     <div id="wrap">
       <canvas id="board"></canvas>
       <div id="overlay"></div>
       <div id="msg" class="hidden"><div class="big" id="msgBig"></div><div class="small" id="msgSmall"></div></div>
     </div>
-    <div id="pad"></div>
+    <div id="pad" class="pad"></div>
+    </div>
     <div id="dragHint"></div>
     <div id="keysHelp" class="hint"></div>
   </section>
@@ -332,8 +355,9 @@
     const games = catalog.filter(g => g.image);
     // PC: two rows, at least four columns; phone: two columns. Empty slots wait for a cartridge.
     const phone = matchMedia("(max-width: 700px)").matches;
-    const cols = phone ? 2 : Math.max(4, Math.ceil(games.length / 2));
-    const slots = phone ? games.length + (games.length % 2) : cols * 2;
+    const sideways = !phone && matchMedia("(max-height: 500px) and (orientation: landscape)").matches;
+    const cols = phone ? 2 : sideways ? 4 : Math.max(4, Math.ceil(games.length / 2));
+    const slots = phone ? games.length + (games.length % 2) : sideways ? Math.ceil(games.length / 4) * 4 : cols * 2;
     $("gallery").style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
     const html = games.map(g => `
       <button class="tile" data-id="${esc(g.id)}" aria-label="${esc(g.name)}">
@@ -547,6 +571,8 @@
     $("gallery").classList.toggle("hidden", s !== "home" && s !== "lobby");
     if (s !== "home" && st) { $("chipCode").textContent = st.code; $("chipGame").textContent = st.game_name; }
     document.body.classList.toggle("in-lobby", s === "lobby");
+    document.body.classList.toggle("in-game", s === "game");
+    setLayout();
     renderGallery();
     if (s === "lobby") renderLobby();
     if (s !== "game") {
@@ -749,14 +775,31 @@
   const held = new Set();
   const pointers = new Map();     // pointerId -> button, so several fingers work at once
 
-  function setupControls(id, mod) {
-    if (controlsFor === id) return;
-    controlsFor = id;
-    releaseAll();
-    controls = Object.assign({ keys: {}, pad: { buttons: [] } }, mod.controls || {});
-    const pad = controls.pad;
-    $("pad").style.gridTemplateColumns = pad.cols || "";
-    $("pad").innerHTML = pad.buttons.map(b => {
+  // the game's column list, e.g. "64px 64px 12px 72px" or "repeat(3, 64px)"
+  function parseCols(cols) {
+    return String(cols || "").replace(/repeat\((\d+),\s*([^)]+)\)/g, (m, n, w) => Array(+n).fill(w.trim()).join(" "))
+      .trim().split(/\s+/).filter(Boolean);
+  }
+  // Sideways on a touch screen the buttons go both sides of the board, one group per thumb:
+  // columns up to the game's narrow spacer column (or landscapeSplit) on the left, the rest on the right.
+  function splitPad(pad) {
+    const cols = parseCols(pad.cols);
+    let split = controls.landscapeSplit;
+    let skip = 0;
+    if (split == null) {
+      const spacer = cols.findIndex(c => parseFloat(c) <= 16);
+      if (spacer > 0) { split = spacer; skip = 1; } else split = Math.floor(cols.length / 2);
+    }
+    const left = [], right = [];
+    for (const b of pad.buttons) {
+      if (b.col <= split) left.push(Object.assign({}, b, { span: b.span ? Math.min(b.span, split - b.col + 1) : 0 }));
+      else right.push(Object.assign({}, b, { col: b.col - split - skip }));
+    }
+    return [{ cols: cols.slice(0, split).join(" "), buttons: left },
+            { cols: cols.slice(split + skip).join(" "), buttons: right }];
+  }
+  function padHtml(buttons) {
+    return buttons.map(b => {
       const place = `grid-column:${b.col}${b.span ? ` / span ${b.span}` : ""};grid-row:${b.row}${b.rows ? ` / span ${b.rows}` : ""}`;
       if (b.type === "lever") {
         return `<div class="lever${b.horizontal ? " h" : ""}" style="${place}"><input type="range" min="0" max="100" value="${b.horizontal ? 50 : 0}"
@@ -765,6 +808,25 @@
       return `<button data-key="${esc(b.key)}" aria-label="${esc(b.name || b.key)}" style="${place}">
         ${b.label}${b.sub ? `<small>${esc(b.sub)}</small>` : ""}</button>`;
     }).join("");
+  }
+  function setupControls(id, mod) {
+    const want = `${id}:${landscape()}`;
+    if (controlsFor === want) return;
+    controlsFor = want;
+    releaseAll();
+    controls = Object.assign({ keys: {}, pad: { buttons: [] } }, mod.controls || {});
+    const pad = controls.pad;
+    if (landscape() && pad.buttons.length) {
+      const [l, r] = splitPad(pad);
+      $("padL").style.gridTemplateColumns = l.cols;
+      $("padL").innerHTML = l.buttons.length ? padHtml(l.buttons) : "";
+      $("pad").style.gridTemplateColumns = r.cols;
+      $("pad").innerHTML = padHtml(r.buttons);
+    } else {
+      $("padL").innerHTML = "";
+      $("pad").style.gridTemplateColumns = pad.cols || "";
+      $("pad").innerHTML = padHtml(pad.buttons);
+    }
     $("keysHelp").textContent = controls.help || "";
     $("overlay").innerHTML = "";
     gameTools = mod.tools || [];
@@ -800,7 +862,7 @@
     for (const k of [...held]) release(k);
     endDrag();
     pointers.clear();
-    document.querySelectorAll("#pad button.held").forEach(b => b.classList.remove("held"));
+    document.querySelectorAll(".pad button.held").forEach(b => b.classList.remove("held"));
   }
   const keyName = e => (e.key.length === 1 ? e.key.toLowerCase() : e.key);
 
@@ -830,7 +892,7 @@
   window.addEventListener("blur", releaseAll);
 
   // on-screen buttons
-  $("pad").addEventListener("pointerdown", e => {
+  for (const el of [$("pad"), $("padL")]) el.addEventListener("pointerdown", e => {
     const b = e.target.closest("button");
     if (!b) return;
     e.preventDefault();
@@ -851,18 +913,18 @@
 
   // levers send their position (0..1); while a finger is on one, the game won't move it
   let leverHeld = null;
-  $("pad").addEventListener("input", e => {
+  $("stage").addEventListener("input", e => {
     const lv = e.target.dataset.lever;
     if (lv) send({ type: "input", key: lv, value: e.target.value / 100 });
   });
-  $("pad").addEventListener("pointerdown", e => { if (e.target.dataset.lever) leverHeld = e.target; }, true);
+  $("stage").addEventListener("pointerdown", e => { if (e.target.dataset && e.target.dataset.lever) leverHeld = e.target; }, true);
   window.addEventListener("pointerup", () => { leverHeld = null; });
   api.syncLever = (key, value) => {
-    const el = document.querySelector(`#pad input[data-lever="${key}"]`);
+    const el = document.querySelector(`.pad input[data-lever="${key}"]`);
     leverValue[key] = value;
     if (el && el !== leverHeld && Math.abs(el.value / 100 - value) > 0.02) el.value = Math.round(value * 100);
   };
-  $("pad").addEventListener("contextmenu", e => e.preventDefault());
+  for (const el of [$("pad"), $("padL")]) el.addEventListener("contextmenu", e => e.preventDefault());
 
   // swipe on the board (games that ask for it): fires as soon as the finger has moved far enough
   const wrap = $("wrap");
@@ -880,6 +942,24 @@
   }, { passive: false });
   wrap.addEventListener("touchend", () => { tracking = false; });
 
+  // ---------------------------------------------------------- board size
+  const landscape = () => isTouch() && window.innerWidth > window.innerHeight;
+  function setLayout() {
+    document.body.classList.toggle("touch-ui", isTouch());
+    document.body.classList.toggle("landscape", landscape());
+  }
+  // Room left for the board. Upright / PC: the width, and the height minus the game's reserve for header,
+  // scoreboard and buttons. Sideways on a touch screen: the whole height under the scoreboard, and the
+  // width between the two button groups.
+  api.space = (maxW, reserve) => {
+    if (landscape()) {
+      const pads = [$("padL"), $("pad")].reduce((w, el) => w + (el.offsetWidth ? el.offsetWidth + 14 : 0), 0);
+      const hud = $("hud").offsetHeight || 30;
+      return { w: Math.max(200, window.innerWidth - 20 - pads), h: Math.max(160, window.innerHeight - hud - 16) };
+    }
+    return { w: Math.min(window.innerWidth - 32, maxW), h: window.innerHeight - reserve };
+  };
+
   // ---------------------------------------------------------- touch screens: drag anywhere
   // Games can declare  drag: {key, axis: "x"|"y", flip, gain, tap, hint}.  On a phone or tablet a finger
   // dragged anywhere on the screen moves the paddle by the same amount (no buttons to find, nothing to
@@ -896,7 +976,7 @@
   const dragOn = () => isTouch() && !!controls.drag && touchMode === "drag";
 
   function paintTouch(s) {
-    document.body.classList.toggle("touch-ui", isTouch());
+    setLayout();
     const show = s === "game" && isTouch() && !!controls.drag;
     const on = show && touchMode === "drag";
     document.body.classList.toggle("has-drag", show);
@@ -942,7 +1022,7 @@
     if (b.dataset.screen) {
       screenPref = b.dataset.screen;
       store.set("ui.touch", screenPref);
-      document.body.classList.toggle("touch-ui", isTouch());
+      setLayout();
       relayout();
       return;
     }

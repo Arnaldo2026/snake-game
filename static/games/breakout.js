@@ -10,8 +10,7 @@
     // touch: without the buttons the field grows, leaving a strip below it for the thumb
     const reserve = api.touchDrag() ? 215 : document.body.classList.contains("touch-ui") ? 255 : 170;
     const ratio = g.w / g.h;
-    const availW = Math.min(window.innerWidth - 32, 900);
-    const availH = window.innerHeight - reserve;
+    const { w: availW, h: availH } = api.space(900, reserve);
     const w = Math.max(260, Math.floor(Math.min(availW, availH * ratio)));
     const key = `${w}:${window.devicePixelRatio || 1}`;
     if (key === sizedFor) return;
@@ -197,6 +196,7 @@
     hold: true,
     swipe: false,
     keys: { ArrowLeft: "left", ArrowRight: "right", a: "left", d: "right", " ": "fire", ArrowUp: "fire" },
+    landscapeSplit: 0,            // sideways: keep all buttons together on the right
     pad: {
       cols: "76px 76px 76px",
       buttons: [
