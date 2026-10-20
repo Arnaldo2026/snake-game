@@ -44,6 +44,26 @@ CATALOG = [{"id": g.id, "name": g.name, "max": g.max_players,
 HERE = Path(__file__).resolve().parent
 STATIC = HERE / "static"
 
+
+def _version():
+    """VERSION file plus the commit it was built from (Render sets RENDER_GIT_COMMIT; locally ask git)."""
+    try:
+        v = (HERE / "VERSION").read_text().strip()
+    except OSError:
+        v = "dev"
+    commit = os.environ.get("RENDER_GIT_COMMIT", "")[:7]
+    if not commit:
+        try:
+            import subprocess
+            commit = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=HERE, capture_output=True,
+                                    text=True, timeout=3).stdout.strip()
+        except Exception:
+            commit = ""
+    return f"{v} · {commit}" if commit else v
+
+
+VERSION = _version()
+
 ROOMS = {}
 WATCHERS = set()                # sockets on the home screen (not in a room): they get the public room list
 _ids = itertools.count(1)
@@ -252,7 +272,18 @@ def clean_name(raw, room):
 
 # ---------------------------------------------------------------- web
 async def index(request):
-    return web.FileResponse(STATIC / "index.html")
+    # the page carries the version it was served with, so it can tell when the server has moved on
+    html = (STATIC / "index.html").read_text(encoding="utf-8").replace("__APP_VERSION__", VERSION)
+    return web.Response(text=html, content_type="text/html", headers={"Cache-Control": "no-cache"})
+
+
+@web.middleware
+async def no_stale_files(request, handler):
+    """Browsers must check for a newer copy of the page and game scripts after every deploy."""
+    resp = await handler(request)
+    if request.path.startswith("/static/"):
+        resp.headers["Cache-Control"] = "no-cache"
+    return resp
 
 
 async def ws_handler(request):
@@ -260,7 +291,7 @@ async def ws_handler(request):
     await ws.prepare(request)
     room = None
     me = None
-    await ws.send_json({"type": "hello", "games": CATALOG})   # game list for the home screen
+    await ws.send_json({"type": "hello", "games": CATALOG, "version": VERSION})   # game list for the home screen
     await ws.send_json({"type": "rooms", "rooms": public_rooms()})
     WATCHERS.add(ws)
 
@@ -349,7 +380,7 @@ def lan_ip():
 
 
 async def serve(port):
-    app = web.Application()
+    app = web.Application(middlewares=[no_stale_files])
     app.router.add_get("/", index)
     app.router.add_get("/ws", ws_handler)
     app.router.add_static("/static", STATIC)
