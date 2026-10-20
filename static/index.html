@@ -118,6 +118,15 @@
   body.landscape.in-game > header { display: none; }
   body.landscape.in-game #game { gap: 4px; }
   body.landscape #hud { max-width: none; min-height: 0; }
+  /* sideways while playing: the scoreboard floats in the empty corners beside the board (scores top left,
+     buttons top right), so the board gets the full height of the screen */
+  body.landscape.in-game #hud { position: fixed; top: 4px; left: 10px; right: 10px; width: auto; align-items: flex-start;
+                                pointer-events: none; z-index: 5; }
+  body.landscape.in-game #hud > * { pointer-events: auto; }
+  body.landscape.in-game #chips { flex-direction: column; align-items: flex-start; }
+  body.landscape.in-game #hudRight { flex-wrap: wrap; justify-content: flex-end; gap: 6px; flex: 0 1 auto; }
+  body.landscape.in-game #timer { flex: 1 0 100%; text-align: right; white-space: normal; font-size: 13px; line-height: 1.25; }
+  body.landscape.in-game #timer:empty { display: none; }
   body.landscape #hud .chip { padding: 2px 8px 2px 5px; font-size: 12px; }
   body.landscape #timer { font-size: 14px; }
   body.landscape #stage { flex-direction: row; align-items: flex-end; justify-content: center; gap: 14px; width: 100%; }
@@ -587,6 +596,7 @@
       if (mod) {
         setupControls(st.game_id, mod);
         guard("drawing", () => mod.render(api));
+        placeHud();
         document.querySelectorAll("#gameTools button").forEach(b =>
           b.classList.toggle("on", !!(mod.toolOn && mod.toolOn(b.dataset.tool))));
       }
@@ -942,6 +952,14 @@
   }, { passive: false });
   wrap.addEventListener("touchend", () => { tracking = false; });
 
+  // sideways: keep the floating scoreboard inside the free strips left and right of the board
+  function placeHud() {
+    const sideways = landscape() && document.body.classList.contains("in-game");
+    const b = sideways && $("wrap").getBoundingClientRect();
+    $("chips").style.maxWidth = sideways ? Math.max(90, b.left - 18) + "px" : "";
+    $("hudRight").style.maxWidth = sideways ? Math.max(90, window.innerWidth - b.right - 18) + "px" : "";
+  }
+
   // ---------------------------------------------------------- board size
   const landscape = () => isTouch() && window.innerWidth > window.innerHeight;
   function setLayout() {
@@ -954,7 +972,7 @@
   api.space = (maxW, reserve) => {
     if (landscape()) {
       const pads = [$("padL"), $("pad")].reduce((w, el) => w + (el.offsetWidth ? el.offsetWidth + 14 : 0), 0);
-      const hud = $("hud").offsetHeight || 30;
+      const hud = document.body.classList.contains("in-game") ? 0 : ($("hud").offsetHeight || 30);
       return { w: Math.max(200, window.innerWidth - 20 - pads), h: Math.max(160, window.innerHeight - hud - 16) };
     }
     return { w: Math.min(window.innerWidth - 32, maxW), h: window.innerHeight - reserve };

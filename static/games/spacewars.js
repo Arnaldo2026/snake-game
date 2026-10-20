@@ -2,6 +2,7 @@
 // Rules and physics run on the server (games/spacewars.py).
 (() => {
   let size = 600, scale = 0.6, sizedFor = "";
+  let WW = 1000, WH = 1000, pw = 600, ph = 600;   // world width/height (arena setting), canvas size in px
   const seen = new Set();          // explosions already heard
 
   // a fixed sprinkle of background stars
@@ -14,15 +15,16 @@
     // room for header + scoreboard, and below the board either the touch buttons or the keys hint
     const reserve = document.body.classList.contains("touch-ui") ? 255 : 170;
     const { w: availW, h: availH } = api.space(960, reserve);
-    const s = Math.max(240, Math.floor(Math.min(availW, availH)));
-    const key = `${s}:${window.devicePixelRatio || 1}`;
+    const sc = Math.max(240 / WH, Math.min(availW / WW, availH / WH));
+    const key = `${sc.toFixed(4)}:${WW}:${window.devicePixelRatio || 1}`;
     if (key === sizedFor) return;
     sizedFor = key;
-    size = s;
-    scale = size / 1000;
+    scale = sc;
+    pw = Math.floor(WW * sc); ph = Math.floor(WH * sc);
+    size = Math.min(pw, ph);
     const dpr = window.devicePixelRatio || 1;
-    api.canvas.style.width = api.canvas.style.height = size + "px";
-    api.canvas.width = api.canvas.height = size * dpr;
+    api.canvas.style.width = pw + "px"; api.canvas.style.height = ph + "px";
+    api.canvas.width = pw * dpr; api.canvas.height = ph * dpr;
     api.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
 
@@ -55,7 +57,7 @@
   }
 
   function drawStar(ctx, g, t) {
-    const cx = 500 * scale, cy = 500 * scale;
+    const cx = WW / 2 * scale, cy = WH / 2 * scale;
     const neg = g.gravity === "negative";
     const col = neg ? "#93c5fd" : "#ffffff";
     ctx.save();
@@ -129,7 +131,7 @@
   // ---------------------------------------------------------------- physics data pad
   // Same model as the server (games/spacewars.py): a = GM/r² towards the star with r ≥ soften,
   // thrust along the nose, speed capped at vmax, semi-implicit Euler with step dt. Ship mass m = 1,
-  // so forces and accelerations have the same numbers. Units: u (world unit, the field is 1000 u wide), s.
+  // so forces and accelerations have the same numbers. Units: u (world unit, the field is 1000 u high), s.
   let padOn = null;
   const ARROW_S = 1.2;            // accelerations drawn as 1.2 u per u/s²
   const VEL_S = 0.5;              // velocity drawn as where you'd be in 0.5 s
@@ -144,7 +146,7 @@
 
   function accel(P, x, y) {
     if (!P.gm) return [0, 0, 0];
-    const dx = 500 - x, dy = 500 - y;
+    const dx = WW / 2 - x, dy = WH / 2 - y;
     const r2 = Math.max(dx * dx + dy * dy, P.soften * P.soften), r = Math.sqrt(r2), a = P.gm / r2;
     return [a * dx / r, a * dy / r, a];
   }
@@ -161,17 +163,17 @@
       if (sp > P.vmax) { vx *= P.vmax / sp; vy *= P.vmax / sp; }
       x += vx * dt; y += vy * dt;
       if (P.edges === "wrap") {
-        if (x < 0 || x >= 1000 || y < 0 || y >= 1000) {
-          x = ((x % 1000) + 1000) % 1000; y = ((y % 1000) + 1000) % 1000;
+        if (x < 0 || x >= WW || y < 0 || y >= WH) {
+          x = ((x % WW) + WW) % WW; y = ((y % WH) + WH) % WH;
           pts.push(null);                               // jump to the other side: break the line
         }
       } else {
         const R = P.ship_r;
-        if (x < R) { x = R; vx = Math.abs(vx) * .8; } else if (x > 1000 - R) { x = 1000 - R; vx = -Math.abs(vx) * .8; }
-        if (y < R) { y = R; vy = Math.abs(vy) * .8; } else if (y > 1000 - R) { y = 1000 - R; vy = -Math.abs(vy) * .8; }
+        if (x < R) { x = R; vx = Math.abs(vx) * .8; } else if (x > WW - R) { x = WW - R; vx = -Math.abs(vx) * .8; }
+        if (y < R) { y = R; vy = Math.abs(vy) * .8; } else if (y > WH - R) { y = WH - R; vy = -Math.abs(vy) * .8; }
       }
       pts.push([x, y]);
-      if (g.star && Math.hypot(x - 500, y - 500) < P.star_r + P.ship_r * 0.6) { hit = [x, y]; break; }
+      if (g.star && Math.hypot(x - WW / 2, y - WH / 2) < P.star_r + P.ship_r * 0.6) { hit = [x, y]; break; }
     }
     return { pts, hit };
   }
@@ -244,7 +246,7 @@
   function padHtml(api, g, s, hit) {
     const P = g.phys, mu = P.gm;
     // maths axes: x to the right, y up, origin at the star
-    const rx = s.x - 500, ry = 500 - s.y, vx = s.vx, vy = -s.vy;
+    const rx = s.x - WW / 2, ry = WH / 2 - s.y, vx = s.vx, vy = -s.vy;
     const r = Math.hypot(rx, ry), v = Math.hypot(vx, vy);
     const th = (Math.atan2(ry, rx) * 180 / Math.PI + 360) % 360;
     const vr = r ? (rx * vx + ry * vy) / r : 0, vt = r ? (rx * vy - ry * vx) / r : 0;
@@ -282,7 +284,7 @@
         lines.push(row("a = −GM/2ε", `${num(a, 0)} u`));
         lines.push(row("peri · apo", `${num(rp, 0)} · ${num(ra, 0)} u`));
         lines.push(row("T = 2π√(a³/GM)", `${num(T)} s`));
-        if (ra > 500) lines.push(`<div style="opacity:.7">apoapsis beyond the screen edge${P.edges === "wrap" ? " (wraps)" : " (bounces)"}</div>`);
+        if (ra > WH / 2) lines.push(`<div style="opacity:.7">apoapsis beyond the screen edge${P.edges === "wrap" ? " (wraps)" : " (bounces)"}</div>`);
       } else {
         lines.push(`<div style="opacity:.7">unbound: escapes the star${P.edges === "wrap" ? " – but the edges wrap" : ""}</div>`);
       }
@@ -300,6 +302,8 @@
   }
 
   function render(api) {
+    const g0 = api.st().game || {};
+    if (g0.w && (g0.w !== WW || g0.h !== WH)) { WW = g0.w; WH = g0.h || 1000; sizedFor = ""; }
     resize(api);
     if (padOn === null) padOn = api.store.get("sw.pad") === "on";
     const st = api.st(), me = api.me(), g = st.game, ctx = api.ctx;
@@ -307,9 +311,9 @@
     const t = performance.now() / 1000;
 
     ctx.fillStyle = "#000";
-    ctx.fillRect(0, 0, size, size);
+    ctx.fillRect(0, 0, pw, ph);
     ctx.fillStyle = "rgba(255,255,255,.35)";
-    for (const [x, y, r] of field) ctx.fillRect(x * scale, y * scale, r, r);
+    for (const [x, y, r] of field) ctx.fillRect(x * WW / 1000 * scale, y * scale, r, r);
 
     if (g.star) drawStar(ctx, g, t);
     for (const rock of g.rocks || []) drawRock(ctx, rock);

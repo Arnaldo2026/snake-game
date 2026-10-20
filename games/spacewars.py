@@ -20,8 +20,9 @@ import math
 import random
 import time
 
-W = 1000.0                     # square world, star in the middle
-CX = CY = W / 2
+H = 1000.0                     # world height; the width depends on the arena setting
+ARENA = {"square": 1000.0, "wide": 1333.0, "screen": 1778.0}   # 1:1, 4:3, 16:9
+CY = H / 2                     # the star sits in the middle
 DT = 1 / 30                    # physics step and broadcast rate
 SHIP_R = 14
 STAR_R = 22
@@ -54,7 +55,7 @@ KEYS = ("left", "right", "thrust", "fire", "hyper")
 class Ship:
     def __init__(self, pid):
         self.id = pid
-        self.x = self.y = CX
+        self.x = self.y = CY
         self.vx = self.vy = 0.0
         self.a = 0.0
         self.alive = False
@@ -80,15 +81,16 @@ class Torp:
 class Rock:
     __slots__ = ("x", "y", "vx", "vy", "r", "seed", "rot", "spin")
 
-    def __init__(self):
+    def __init__(self, W):
+        CX = W / 2
         self.r = random.uniform(*ROCK_R)
         self.seed = random.randrange(1, 100000)      # the browser draws its shape from this
         self.rot = random.uniform(0, math.tau)
         self.spin = random.uniform(-0.8, 0.8)
         # enter from a random border, heading roughly inwards
         side = random.randrange(4)
-        t = random.uniform(80, W - 80)
-        self.x, self.y = [(t, self.r), (W - self.r, t), (t, W - self.r), (self.r, t)][side]
+        t = random.uniform(80, (W if side % 2 == 0 else H) - 80)
+        self.x, self.y = [(t, self.r), (W - self.r, t), (t, H - self.r), (self.r, t)][side]
         # aimed past the star, not at it, so they swing around before falling in
         ang = math.atan2(CY - self.y, CX - self.x) + random.choice((-1, 1)) * random.uniform(0.6, 1.1)
         sp = random.uniform(*ROCK_SPEED)
@@ -108,6 +110,11 @@ class SpaceWarsGame:
                    "normal": "Use the pull to orbit, thrust to escape.",
                    "strong": "Hard to escape – stay moving or fall in.",
                    "negative": "The star pushes you away. Don't touch it anyway."}},
+        {"key": "arena", "label": "Arena", "default": "wide",
+         "options": [["square", "Square"], ["wide", "Wide 4:3"], ["screen", "Widescreen 16:9"]],
+         "hints": {"square": "Best for phones held upright.",
+                   "wide": "Shaped like the 1977 cabinet screen – fits PCs and tablets.",
+                   "screen": "Fills a phone held sideways or a widescreen monitor."}},
         {"key": "edges", "label": "Screen edges", "default": "wrap",
          "options": [["wrap", "Wrap around"], ["bounce", "Bounce"]]},
         {"key": "hyperspace", "label": "Hyperspace", "default": "on",
@@ -151,6 +158,14 @@ class SpaceWarsGame:
         return False
 
     @property
+    def W(self):
+        return ARENA.get(self.settings.get("arena"), 1000.0)
+
+    @property
+    def CX(self):
+        return self.W / 2
+
+    @property
     def g(self):
         return GRAVITY[self.settings["gravity"]]
 
@@ -177,7 +192,7 @@ class SpaceWarsGame:
     def new_round(self, countdown):
         self.round += 1
         self.torps = []
-        self.rocks = [Rock() for _ in range(self.settings["asteroids"])]
+        self.rocks = [Rock(self.W) for _ in range(self.settings["asteroids"])]
         self.rock_due = []
         self.round_msg = ""
         self.round_winner = None
@@ -186,7 +201,7 @@ class SpaceWarsGame:
         base = random.uniform(0, math.tau)
         for i, s in enumerate(players):
             ang = base + math.tau * i / n
-            s.x = CX + math.cos(ang) * SPAWN_R
+            s.x = self.CX + math.cos(ang) * SPAWN_R
             s.y = CY + math.sin(ang) * SPAWN_R
             # start in a gentle orbit (tangential velocity) when the star pulls
             if self.g > 0:
@@ -285,7 +300,7 @@ class SpaceWarsGame:
         g = self.g
         if not g:
             return 0.0, 0.0
-        dx, dy = CX - x, CY - y
+        dx, dy = self.CX - x, CY - y
         r2 = max(dx * dx + dy * dy, SOFTEN * SOFTEN)
         r = math.sqrt(r2)
         acc = g / r2
@@ -293,22 +308,22 @@ class SpaceWarsGame:
 
     def edges(self, o, radius):
         if self.settings["edges"] == "wrap":
-            o.x %= W
-            o.y %= W
+            o.x %= self.W
+            o.y %= H
             return
         if o.x < radius:
             o.x, o.vx = radius, abs(o.vx) * 0.8
-        elif o.x > W - radius:
-            o.x, o.vx = W - radius, -abs(o.vx) * 0.8
+        elif o.x > self.W - radius:
+            o.x, o.vx = self.W - radius, -abs(o.vx) * 0.8
         if o.y < radius:
             o.y, o.vy = radius, abs(o.vy) * 0.8
-        elif o.y > W - radius:
-            o.y, o.vy = W - radius, -abs(o.vy) * 0.8
+        elif o.y > H - radius:
+            o.y, o.vy = H - radius, -abs(o.vy) * 0.8
 
     def random_spot(self):
         for _ in range(50):
-            x, y = random.uniform(60, W - 60), random.uniform(60, W - 60)
-            if math.hypot(x - CX, y - CY) > 180 and \
+            x, y = random.uniform(60, self.W - 60), random.uniform(60, H - 60)
+            if math.hypot(x - self.CX, y - CY) > 180 and \
                     all(math.hypot(x - r.x, y - r.y) > r.r + 80 for r in self.rocks):
                 return x, y
         return 100.0, 100.0
@@ -317,7 +332,7 @@ class SpaceWarsGame:
         while self.rock_due and now >= self.rock_due[0] and \
                 len(self.rocks) < self.settings["asteroids"]:
             self.rock_due.pop(0)
-            self.rocks.append(Rock())
+            self.rocks.append(Rock(self.W))
         for rock in list(self.rocks):
             gx, gy = self.gravity(rock.x, rock.y)
             rock.vx += gx * ROCK_GRAVITY * dt
@@ -332,13 +347,13 @@ class SpaceWarsGame:
             # asteroids always bounce off the borders
             if rock.x < rock.r:
                 rock.x, rock.vx = rock.r, abs(rock.vx)
-            elif rock.x > W - rock.r:
-                rock.x, rock.vx = W - rock.r, -abs(rock.vx)
+            elif rock.x > self.W - rock.r:
+                rock.x, rock.vx = self.W - rock.r, -abs(rock.vx)
             if rock.y < rock.r:
                 rock.y, rock.vy = rock.r, abs(rock.vy)
-            elif rock.y > W - rock.r:
-                rock.y, rock.vy = W - rock.r, -abs(rock.vy)
-            if star and math.hypot(rock.x - CX, rock.y - CY) < STAR_R + rock.r * 0.7:
+            elif rock.y > H - rock.r:
+                rock.y, rock.vy = H - rock.r, -abs(rock.vy)
+            if star and math.hypot(rock.x - self.CX, rock.y - CY) < STAR_R + rock.r * 0.7:
                 self.destroy_rock(rock, now)
 
     def step(self, now):
@@ -351,7 +366,7 @@ class SpaceWarsGame:
                 if not s.alive and not s.out and s.respawn_at and now >= s.respawn_at:
                     s.x, s.y = self.random_spot()
                     s.vx = s.vy = 0.0
-                    s.a = math.atan2(CY - s.y, CX - s.x) + math.pi / 2
+                    s.a = math.atan2(CY - s.y, self.CX - s.x) + math.pi / 2
                     s.alive, s.respawn_at, s.keys = True, 0.0, set()
 
         self.step_rocks(now, dt, star)
@@ -398,7 +413,7 @@ class SpaceWarsGame:
             s.y += s.vy * dt
             self.edges(s, SHIP_R)
 
-            if star and math.hypot(s.x - CX, s.y - CY) < STAR_R + SHIP_R * 0.6:
+            if star and math.hypot(s.x - self.CX, s.y - CY) < STAR_R + SHIP_R * 0.6:
                 self.explode(s, now, "star")
                 continue
 
@@ -419,7 +434,7 @@ class SpaceWarsGame:
             t.x += t.vx * dt
             t.y += t.vy * dt
             self.edges(t, 2)
-            if star and math.hypot(t.x - CX, t.y - CY) < STAR_R:
+            if star and math.hypot(t.x - self.CX, t.y - CY) < STAR_R:
                 continue
             keep.append(t)
         self.torps = keep
@@ -532,7 +547,7 @@ class SpaceWarsGame:
         r = lambda v: round(v, 1)
         return {
             "phase": self.phase,
-            "size": W,
+            "w": self.W, "h": H,
             "star": self.g != 0,
             "gravity": self.settings["gravity"],
             "round": self.round,
