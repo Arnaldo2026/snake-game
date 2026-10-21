@@ -29,7 +29,10 @@
   }
   body { display: flex; flex-direction: column; align-items: center; padding: 10px 16px 16px; gap: 10px; }
   .hidden { display: none !important; }
-  #appVersion { font-size: 11px; color: var(--muted); opacity: .75; text-align: center; font-variant-numeric: tabular-nums; }
+  /* version badge: bottom-right corner on PCs; at the end of the page on phones (see the media queries) */
+  #appVersion { position: fixed; right: 10px; bottom: 8px; z-index: 6; font-size: 12px; font-weight: 600;
+                color: #cbd5e1; background: rgba(16, 20, 26, .85); border: 1px solid var(--line); border-radius: 6px;
+                padding: 3px 8px; font-variant-numeric: tabular-nums; pointer-events: none; }
   body.in-game #appVersion { display: none; }
   #newVersion { width: 100%; max-width: 960px; display: flex; align-items: center; justify-content: space-between; gap: 10px;
                 padding: 8px 12px; border-radius: 10px; background: #14532d; color: #dcfce7; font-weight: 600; font-size: 14px; }
@@ -188,7 +191,7 @@
   #admit .row button { flex: 1 1 auto; padding: 9px 10px; font-size: 14px; }
 
   /* home screen: a picture tile for each game fills the background */
-  body > *:not(#gallery):not(#float):not(#modal):not(.stick) { position: relative; z-index: 1; }
+  body > *:not(#gallery):not(#float):not(#modal):not(.stick):not(#appVersion) { position: relative; z-index: 1; }
   /* two rows of half-screen cartridges; empty slots say INSERT CARTRIDGE */
   #gallery { position: fixed; inset: 0; z-index: 0; display: grid;
              grid-template-columns: repeat(4, 1fr); grid-template-rows: repeat(2, 50vh); }
@@ -219,6 +222,7 @@
     .tile .tname { bottom: 14px; font-size: 18px; letter-spacing: 1px; padding: 0 4px; }
     .tile.empty span { font-size: 12px; letter-spacing: 2px; }
     body.in-lobby #gallery { display: none; }                   /* the room screen scrolls on phones */
+    #appVersion { position: static; order: 100; align-self: center; }
   }
   @media (max-height: 500px) and (orientation: landscape) {
     /* phones held sideways: same idea, a row of four cartridges below the form */
@@ -227,6 +231,7 @@
     .tile .tname { bottom: 12px; font-size: 18px; letter-spacing: 1px; padding: 0 4px; }
     .tile.empty span { font-size: 12px; letter-spacing: 2px; }
     body.in-lobby #gallery { display: none; }
+    #appVersion { position: static; order: 100; align-self: center; }
   }
 
   /* home: public rooms anyone can join */
