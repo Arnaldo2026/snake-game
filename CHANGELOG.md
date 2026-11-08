@@ -3,6 +3,14 @@
 The version is in the `VERSION` file and shows on the home screen (bottom), next to the commit it was built from.
 Bump it with every change pushed: the last number for fixes, the middle one for new features or games.
 
+## 1.2.0 – 2026-11-08
+Poker in English or Italian: each player picks their language in the room (table, buttons, advice, hand
+names, results, room settings and the manual). After each hand the result stays on screen (host setting
+8 / 15 / 30 s or until everyone is ready, with a Next hand button): winner, hand, why it won (e.g. kicker),
+every hand shown with its best five cards highlighted; "Last hand" shows it again during the next one.
+Computer players think a little longer. Platform: per-device language for games that offer it,
+translated room settings.
+
 ## 1.1.0 – 2026-11-08
 New game: Poker – Texas Hold'em or Five-card draw (host's choice), 2–6 players; alone you play against
 1–5 computer players. Same starting chips for all, blinds, a cap on raises per betting round, side pots,

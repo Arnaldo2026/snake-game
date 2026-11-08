@@ -12,6 +12,10 @@ cards are face up on purpose).
   all-ins. The match lasts a set number of hands or until one player has every chip.
 * Modes: Normal; Advice (hints on your own cards: hand, chance to win, pot odds, a
   suggested action, which cards to change); Demo (every card face up + advice for all).
+* No sentences are sent: actions, hands and advice go out as codes and numbers, and each
+  browser writes them in its player's language (English or Italian).
+* After each hand the result stays on screen for the host's pause, or until every player
+  has pressed Next hand ({"action": "ready"}).
 
 Inputs: {"action": "fold" | "check" | "call" | "raise" | "allin", "to": total bet}
         {"action": "draw", "cards": [indices of the cards to change]}  (Five-card draw)
@@ -24,8 +28,8 @@ import time
 from collections import Counter
 
 COUNTDOWN = 2.0
-SHOWDOWN_PAUSE = 5.5           # seconds to look at the result of a hand
-FOLD_PAUSE = 2.5               # result when everybody else folded
+FOLD_PAUSE = 5.0               # result when everybody else folded (when the pause is longer)
+READY_MAX = 120.0              # "until everyone is ready": go on anyway after this long
 RUNOUT_STEP = 1.3              # all-in: the rest of the board is dealt slowly
 STREET_PAUSE = 0.6             # after a new card on the board, before the next action
 MAX_SEATS = 6
@@ -99,6 +103,14 @@ def evaluate(cards):
     return (0, *sorted(ranks, reverse=True)[:5])
 
 
+def best_five(cards):
+    """The five cards that make the best hand (for highlighting at the showdown)."""
+    if len(cards) <= 5:
+        return list(cards)
+    from itertools import combinations
+    return list(max(combinations(cards, 5), key=evaluate))
+
+
 def describe(ev):
     cat = ev[0]
     if cat == 8:
@@ -134,27 +146,24 @@ def discard_plan(cards):
     """Five-card draw: which cards to change (indices) and why. Used by the computer
     players and by the advice."""
     if len(cards) != 5:
-        return [], ""
+        return [], ["none"]
     ev = evaluate(cards)
     cat = ev[0]
     ranks = [c // 4 + 2 for c in cards]
     if cat >= 4:
-        return [], f"{describe(ev)} – a made hand: keep all five (stand pat)."
+        return [], ["made", *ev]
     if cat == 3:
-        return [i for i, r in enumerate(ranks) if r != ev[1]], f"Keep the three {plural(ev[1])}, change the other two."
+        return [i for i, r in enumerate(ranks) if r != ev[1]], ["trips", ev[1]]
     if cat == 2:
-        return [i for i, r in enumerate(ranks) if r not in (ev[1], ev[2])], \
-            f"Keep both pairs, change the odd card: 1 chance in 11 to make a full house."
+        return [i for i, r in enumerate(ranks) if r not in (ev[1], ev[2])], ["twopair", ev[1], ev[2]]
     suits = [c % 4 for c in cards]
     four_suit = [s for s, n in Counter(suits).items() if n == 4]
     if four_suit and cat < 1:
-        return [i for i, s in enumerate(suits) if s != four_suit[0]], \
-            "Four cards of the same suit: change the fifth, about 1 chance in 5 to make a flush."
+        return [i for i, s in enumerate(suits) if s != four_suit[0]], ["flush4"]
     if cat == 1:
-        return [i for i, r in enumerate(ranks) if r != ev[1]], \
-            f"Keep the pair of {plural(ev[1])} and change three cards."
+        return [i for i, r in enumerate(ranks) if r != ev[1]], ["pair", ev[1]]
     if four_suit:
-        return [i for i, s in enumerate(suits) if s != four_suit[0]], "Four to a flush: change the fifth card."
+        return [i for i, s in enumerate(suits) if s != four_suit[0]], ["flush4"]
     # four to an open-ended straight (e.g. 5-6-7-8): change the fifth
     uniq = sorted(set(ranks))
     for lo in range(2, 11):
@@ -162,10 +171,9 @@ def discard_plan(cards):
         if run <= set(uniq) and lo + 3 < 14:
             odd = [i for i, r in enumerate(ranks) if r not in run]
             if len(odd) == 1:
-                return odd, "Four in a row, open at both ends: change the fifth, about 1 chance in 6 for a straight."
+                return odd, ["straight4"]
     keep = max(range(5), key=lambda i: ranks[i])
-    return [i for i in range(5) if i != keep], \
-        f"Nothing yet: keep your highest card ({RANK_NAME[ranks[keep]]}) and change four."
+    return [i for i in range(5) if i != keep], ["high", ranks[keep]]
 
 
 # ---------------------------------------------------------------- table
@@ -190,7 +198,7 @@ class Seat:
         self.bet = 0               # put in during this betting round
         self.total = 0             # put in during this hand
         self.acted = False
-        self.action = ""           # last action, shown on the table
+        self.act = None            # last action as [code, amount] (the browser words it)
         self.drew = None           # Five-card draw: how many cards changed (None = not yet)
         self.shown = False         # cards turned face up for everybody (showdown)
         self.won = 0
@@ -212,32 +220,63 @@ class PokerGame:
         {"key": "variant", "label": "Variant", "default": "holdem",
          "options": [["holdem", "Texas Hold'em"], ["draw", "Five-card draw"]],
          "hints": {"holdem": "2 cards each + 5 shared on the table (flop, turn, river). Four betting rounds.",
-                   "draw": "5 cards each, a betting round, change up to 4 cards, a second betting round."}},
+                   "draw": "5 cards each, a betting round, change up to 4 cards, a second betting round."},
+         "i18n": {"it": {"label": "Variante", "options": {"holdem": "Texas Hold'em", "draw": "Classico a 5 carte"},
+                         "hints": {"holdem": "2 carte a testa + 5 in comune sul tavolo (flop, turn, river). Quattro giri di puntate.",
+                                   "draw": "5 carte a testa, un giro di puntate, cambio fino a 4 carte, un secondo giro."}}}},
         {"key": "mode", "label": "Mode", "default": "advice",
          "options": [["normal", "Normal"], ["advice", "Advice"], ["demo", "Demo"]],
          "hints": {"normal": "Real poker: you see only your own cards.",
                    "advice": "Hints on your own hand: what you hold, your chance to win, a suggested move.",
-                   "demo": "Learning table: every card is face up and everybody gets advice."}},
+                   "demo": "Learning table: every card is face up and everybody gets advice."},
+         "i18n": {"it": {"label": "Modalità", "options": {"normal": "Normale", "advice": "Consigli", "demo": "Demo"},
+                         "hints": {"normal": "Poker vero: vedi solo le tue carte.",
+                                   "advice": "Aiuto sulla tua mano: cosa hai, la probabilità di vincere, la mossa consigliata.",
+                                   "demo": "Tavolo per imparare: tutte le carte sono scoperte e tutti ricevono consigli."}}}},
         {"key": "chips", "label": "Starting chips", "default": 1000,
-         "options": [[500, "500"], [1000, "1,000"], [2000, "2,000"]]},
+         "options": [[500, "500"], [1000, "1,000"], [2000, "2,000"]],
+         "i18n": {"it": {"label": "Fiches iniziali", "options": {1000: "1.000", 2000: "2.000"}}}},
         {"key": "blinds", "label": "Blinds", "default": 20,
          "options": [[10, "5 / 10"], [20, "10 / 20"], [50, "25 / 50"]],
-         "hints": {10: "Small blind / big blind: the two forced bets that start each hand."}},
+         "hints": {10: "Small blind / big blind: the two forced bets that start each hand."},
+         "i18n": {"it": {"label": "Bui", "hints": {10: "Piccolo buio / grande buio: le due puntate obbligatorie che aprono ogni mano."}}}},
         {"key": "cap", "label": "Raises per round", "default": 3,
          "options": [[2, "2"], [3, "3"], [4, "4"], [0, "No cap"]],
          "hints": {2: "After the first bet, at most 2 raises in each betting round.",
                    3: "After the first bet, at most 3 raises in each betting round.",
                    4: "After the first bet, at most 4 raises in each betting round.",
-                   0: "Players may re-raise without limit."}},
+                   0: "Players may re-raise without limit."},
+         "i18n": {"it": {"label": "Rilanci per giro", "options": {0: "Senza limite"},
+                         "hints": {2: "Dopo la prima puntata, al massimo 2 rilanci per ogni giro di puntate.",
+                                   3: "Dopo la prima puntata, al massimo 3 rilanci per ogni giro di puntate.",
+                                   4: "Dopo la prima puntata, al massimo 4 rilanci per ogni giro di puntate.",
+                                   0: "Si può rilanciare senza limite."}}}},
         {"key": "hands", "label": "Match", "default": 20,
-         "options": [[10, "10 hands"], [20, "20 hands"], [0, "Last one standing"]]},
+         "options": [[10, "10 hands"], [20, "20 hands"], [0, "Last one standing"]],
+         "i18n": {"it": {"label": "Partita", "options": {10: "10 mani", 20: "20 mani", 0: "Fino all'ultimo"}}}},
         {"key": "bots", "label": "Computer players (when alone)", "default": 3,
          "options": [[1, "1"], [2, "2"], [3, "3"], [4, "4"], [5, "5"]],
-         "hints": {1: "Playing alone you face the computer; with friends in the room all players are human."}},
+         "hints": {1: "Playing alone you face the computer; with friends in the room all players are human."},
+         "i18n": {"it": {"label": "Giocatori del computer (se giochi da solo)",
+                         "hints": {1: "Da solo giochi contro il computer; con amici nella stanza giocano solo persone."}}}},
+        {"key": "pause", "label": "After each hand", "default": 15,
+         "options": [[8, "8 s"], [15, "15 s"], [30, "30 s"], [0, "Until all ready"]],
+         "hints": {0: "The result stays until every player presses Next hand.",
+                   8: "Time to look at the cards and the result (Next hand skips it when everyone is ready).",
+                   15: "Time to look at the cards and the result (Next hand skips it when everyone is ready).",
+                   30: "Time to look at the cards and the result (Next hand skips it when everyone is ready)."},
+         "i18n": {"it": {"label": "Dopo ogni mano", "options": {0: "Finché tutti pronti"},
+                         "hints": {0: "Il risultato resta finché tutti premono Prossima mano.",
+                                   8: "Tempo per guardare le carte e il risultato (Prossima mano accorcia se tutti sono pronti).",
+                                   15: "Tempo per guardare le carte e il risultato (Prossima mano accorcia se tutti sono pronti).",
+                                   30: "Tempo per guardare le carte e il risultato (Prossima mano accorcia se tutti sono pronti)."}}}},
         {"key": "timer", "label": "Time to act", "default": 40,
          "options": [[20, "20 s"], [40, "40 s"], [0, "No limit"]],
          "hints": {20: "When time runs out you check if you can, otherwise you fold.",
-                   40: "When time runs out you check if you can, otherwise you fold."}},
+                   40: "When time runs out you check if you can, otherwise you fold."},
+         "i18n": {"it": {"label": "Tempo per decidere", "options": {0: "Senza limite"},
+                         "hints": {20: "Allo scadere bussi se puoi, altrimenti lasci la mano.",
+                                   40: "Allo scadere bussi se puoi, altrimenti lasci la mano."}}}},
     ]
 
     def __init__(self, room):
@@ -265,6 +304,8 @@ class PokerGame:
         self.ev = {"deal": 0, "card": 0, "chips": 0, "check": 0, "fold": 0, "win": 0, "turn": 0, "allin": 0}
         self.cache = {}
         self.bust_order = 0
+        self.ready = set()
+        self.last_result = None    # the previous hand, so it can be looked at again
 
     # ------------------------------------------------ settings
     def set_setting(self, key, value):
@@ -353,8 +394,8 @@ class PokerGame:
         else:
             sb_i = self.nxt(self.dealer, in_game)
         bb_i = self.nxt(sb_i, in_game)
-        self.post(sb_i, self.sb, "Small blind")
-        self.post(bb_i, self.bb, "Big blind")
+        self.post(sb_i, self.sb, "sb")
+        self.post(bb_i, self.bb, "bb")
         self.current_bet = self.bb
         self.min_raise = self.bb
         self.raises = 0
@@ -368,13 +409,13 @@ class PokerGame:
         else:
             self.set_turn(first, now)
 
-    def post(self, i, amount, label):
+    def post(self, i, amount, code):
         s = self.seats[i]
         a = min(amount, s.chips)
         s.chips -= a
         s.bet += a
         s.total += a
-        s.action = f"{label} {a}"
+        s.act = [code, a]
         if s.chips == 0:
             s.allin = True
 
@@ -389,7 +430,7 @@ class PokerGame:
         s = self.seats[i]
         self.ev["turn"] += 1
         if s.bot:
-            self.act_at = now + delay + random.uniform(0.9, 1.9)
+            self.act_at = now + delay + random.uniform(1.3, 2.5)
             self.deadline = None
         else:
             t = self.settings["timer"]
@@ -410,8 +451,14 @@ class PokerGame:
                      f"with {me.chips:,} chips") if me else "Match over"
         else:
             title = f"{top.name} wins with {top.chips:,} chips"
+        if bots:
+            title_it = (f"Hai vinto! {me.chips:,} fiches".replace(",", ".") if place == 1 else
+                        f"Vince {top.name} · sei {place}° con {me.chips:,} fiches".replace(",", ".")) if me else "Partita finita"
+        else:
+            title_it = f"Vince {top.name} con {top.chips:,} fiches".replace(",", ".")
         self.results = {
             "title": title,
+            "titles": {"it": title_it},
             "winner": top.pid if not top.bot else None,
             "ranking": [{"id": s.pid, "score": s.chips} for s in order if not s.bot],
         }
@@ -423,9 +470,19 @@ class PokerGame:
         if self.phase == "countdown" and now >= self.next_at:
             self.new_hand(now)
             return True
-        if self.phase == "showdown" and now >= self.next_at:
-            self.new_hand(now)
-            return True
+        if getattr(self, "poke", False):
+            self.poke = False
+            changed = True
+        if self.phase == "showdown":
+            waiting = [s for s in self.humans_to_wait() if s.pid not in self.ready]
+            if now >= self.next_at or not waiting:
+                self.last_result = self.result_view()
+                self.new_hand(now)
+                return True
+            sec = math.ceil(self.next_at - now)
+            if sec != self.last_sec:
+                self.last_sec = sec
+                changed = True
         if self.phase == "runout" and now >= self.next_at:
             if self.street < 3:
                 self.street += 1
@@ -485,11 +542,11 @@ class PokerGame:
             action = "call" if o["to_call"] else "check"
         if action == "fold":
             s.folded = True
-            s.action = "Fold"
+            s.act = ["fold"]
             self.muck += s.cards
             self.ev["fold"] += 1
         elif action == "check":
-            s.action = "Check"
+            s.act = ["check"]
             self.ev["check"] += 1
         elif action == "call":
             add = o["call"]
@@ -498,7 +555,7 @@ class PokerGame:
             s.total += add
             if s.chips == 0:
                 s.allin = True
-            s.action = "All-in " + str(s.bet) if s.allin else (f"Call {add}" if add else "Check")
+            s.act = ["allin", s.bet] if s.allin else (["call", add] if add else ["check"])
             self.ev["chips" if add else "check"] += 1
         elif action == "raise":
             to = max(o["min_to"], min(o["max_to"], int(to or 0)))
@@ -518,7 +575,7 @@ class PokerGame:
             for other in self.seats:
                 if other is not s:
                     other.acted = False
-            s.action = f"All-in {to}" if s.allin else (f"{word} {to}" if word == "Bet" else f"Raise to {to}")
+            s.act = ["allin", to] if s.allin else (["bet", to] if word == "Bet" else ["raise", to])
             self.ev["allin" if s.allin else "chips"] += 1
         else:
             return
@@ -568,7 +625,7 @@ class PokerGame:
                 self.next_at = now + RUNOUT_STEP
                 return
             for s in self.seats:
-                s.action = "" if not s.allin and s.live else s.action
+                s.act = None if not s.allin and s.live else s.act
             self.set_turn(self.nxt(self.dealer, lambda s: s.can_act), now, STREET_PAUSE)
             return
         # Five-card draw
@@ -591,7 +648,7 @@ class PokerGame:
                 random.shuffle(self.deck)
             s.cards[k] = self.deck.pop()
         s.drew = len(idx)
-        s.action = f"Changes {len(idx)}" if idx else "Stands pat"
+        s.act = ["draw", len(idx)] if idx else ["pat"]
         self.ev["card"] += 1
         self.cache = {}
         nxt = self.nxt(i, lambda o: o.live and o.drew is None)
@@ -621,11 +678,10 @@ class PokerGame:
         self.collect()
         self.to_act = None
         self.deadline = None
-        self.result = {"text": f"{w.name} wins {pot:,} – everyone else folded",
-                       "pots": [{"amount": pot, "winners": [self.seats.index(w)], "hand": ""}]}
+        self.result = {"fold": True, "shown": [],
+                       "pots": [{"amount": pot, "winners": [self.seats.index(w)], "ev": None}]}
         self.ev["win"] += 1
-        self.phase = "showdown"
-        self.next_at = now + FOLD_PAUSE
+        self.begin_pause(now, fold=True)
 
     def side_pots(self):
         contrib = [s.total for s in self.seats]
@@ -665,23 +721,29 @@ class PokerGame:
                 win = share + (1 if k < odd else 0)
                 self.seats[i].chips += win
                 self.seats[i].won += win
-            pots_out.append({"amount": pot["amount"], "winners": winners, "hand": describe(best)})
-        main = pots_out[0] if pots_out else None
-        if main:
-            names = " and ".join(self.seats[i].name for i in main["winners"])
-            verb = "split" if len(main["winners"]) > 1 else "wins"
-            text = f"{names} {verb} {main['amount']:,} with {main['hand']}"
-            for p in pots_out[1:]:
-                text += f" · side pot {p['amount']:,}: {' and '.join(self.seats[i].name for i in p['winners'])}"
-        else:
-            text = ""
-        self.result = {"text": text, "pots": pots_out}
+            pots_out.append({"amount": pot["amount"], "winners": winners, "ev": list(best)})
+        shown = sorted(({"seat": i, "ev": list(sc), "best": best_five(self.seats[i].cards + self.board)}
+                        for i, sc in scores.items()), key=lambda h: h["ev"], reverse=True)
+        self.result = {"fold": False, "pots": pots_out, "shown": shown}
         for i, s in enumerate(self.seats):
             if i in scores:
-                s.action = describe(scores[i])
+                s.act = ["hand", *scores[i]]
         self.ev["win"] += 1
+        self.begin_pause(now)
+
+    def begin_pause(self, now, fold=False):
+        # time to look at the result: the host's pause, or until every player has pressed Next hand
         self.phase = "showdown"
-        self.next_at = now + SHOWDOWN_PAUSE
+        self.ready = set()
+        pause = self.settings["pause"]
+        if pause:
+            self.next_at = now + (min(pause, FOLD_PAUSE) if fold else pause)
+        else:
+            self.next_at = now + READY_MAX
+        self.prev_result = None
+
+    def humans_to_wait(self):
+        return [s for s in self.seats if not s.bot and not s.left and not s.out]
 
     # ------------------------------------------------ players coming and going
     def seat_of(self, pid):
@@ -689,10 +751,16 @@ class PokerGame:
 
     def input(self, pid, data):
         i = self.seat_of(pid)
-        if i is None or self.to_act != i or self.seats[i].left:
+        if i is None or self.seats[i].left:
+            return
+        action = data.get("action")
+        if action == "ready" and self.phase == "showdown":
+            self.ready.add(pid)
+            self.poke = True               # show who's ready straight away
+            return
+        if self.to_act != i:
             return
         now = time.monotonic()
-        action = data.get("action")
         if self.phase == "draw" and action == "draw":
             cards = data.get("cards") or []
             self.do_draw(i, cards if isinstance(cards, list) else [], now)
@@ -715,17 +783,17 @@ class PokerGame:
         if self.phase in ("betting", "draw") and self.to_act == i:
             if self.phase == "draw":
                 s.folded = True
-                s.action = "Left"
+                s.act = ["left"]
                 if self.count(lambda o: o.live) == 1:
                     self.fold_win(now)
                 else:
                     self.do_draw_skip(i, now)
             else:
                 self.act(i, "fold", 0, now)
-                s.action = "Left"
+                s.act = ["left"]
         else:
             s.folded = True
-            s.action = "Left"
+            s.act = ["left"]
             if self.count(lambda o: o.live) == 1 and self.phase in ("betting", "draw", "runout"):
                 self.fold_win(now)
 
@@ -841,7 +909,8 @@ class PokerGame:
         need = o["to_call"] / (pot + o["to_call"]) if o["to_call"] else 0.0
         strong = eq >= min(0.86, (fair * 1.8 + 0.12) * style)
         good = eq >= (fair * 1.25 + 0.04) * style
-        pct = f"{int(eq * 100 + 0.5)}%"
+        info = {"eq": round(eq, 3), "opp": opp, "call": o["to_call"], "pot": pot, "need": round(need, 3),
+                "word": o["word"].lower()}
 
         def size(frac):
             amount = self.current_bet + max(self.min_raise, int(pot * frac))
@@ -851,20 +920,17 @@ class PokerGame:
 
         if o["to_call"] == 0:
             if strong and o["can_raise"]:
-                return "raise", size(0.65), f"About {pct} to win against {opp}: strong – {o['word'].lower()} to build the pot."
+                return "raise", size(0.65), ["bet_strong", info]
             if good and o["can_raise"]:
-                return "raise", size(0.4), f"About {pct} to win against {opp}: better than average – a small {o['word'].lower()}."
-            return "check", 0, f"About {pct} to win against {opp}: nothing to pay, so check and see."
+                return "raise", size(0.4), ["bet_good", info]
+            return "check", 0, ["check", info]
         if strong and o["can_raise"]:
-            return "raise", size(0.8), (f"About {pct} to win, the call costs {o['to_call']} for a pot of {pot:,} "
-                                        f"(needs {int(need * 100 + 0.5)}%): raise.")
+            return "raise", size(0.8), ["raise_strong", info]
         if eq >= need + 0.03 * style:
-            return "call", 0, (f"About {pct} to win; calling {o['to_call']} into {pot:,} needs only "
-                               f"{int(need * 100 + 0.5)}%: call.")
+            return "call", 0, ["call", info]
         if o["to_call"] <= self.bb and eq >= fair * 0.6:
-            return "call", 0, f"About {pct} to win and it's cheap ({o['to_call']}): call and see."
-        return "fold", 0, (f"About {pct} to win, but calling {o['to_call']} into {pot:,} needs "
-                           f"{int(need * 100 + 0.5)}%: fold.")
+            return "call", 0, ["call_cheap", info]
+        return "fold", 0, ["fold", info]
 
     def bot_act(self, i, now):
         s = self.seats[i]
@@ -888,26 +954,39 @@ class PokerGame:
         if not s.live:
             return None
         cards = s.cards
-        if self.holdem and not self.board:
-            hand = describe_start(cards)
-        else:
-            hand = describe(evaluate(cards + self.board))
+        hand = self.hand_code(cards)
         eq = self.equity(i, reveal)
         out = {"hand": hand, "eq": round(eq, 3), "opp": self.count(lambda x: x.live) - 1}
         if self.phase == "draw" and s.drew is None:
             disc, why = discard_plan(cards)
             out["discard"] = disc
-            out["text"] = why
+            out["why"] = why
             if disc:
                 out["improve"] = round(self.improve_chance(i, disc, 400), 3)
         elif self.phase == "betting" and self.to_act == i:
             action, to, why = self.decide(i, eq)
             o = self.options(i)
-            out.update({"suggest": action, "to": to, "text": why,
+            out.update({"suggest": action, "to": to, "why": why,
                         "need": round(o["to_call"] / (self.pot_total() + o["to_call"]), 3) if o["to_call"] else 0})
         return out
 
     # ------------------------------------------------ state for browsers
+    def hand_code(self, cards):
+        """What a hand is, as codes: ["S", high, low, suited] for two Hold'em cards before the flop,
+        otherwise the evaluation tuple (category, ranks...)."""
+        if self.holdem and not self.board and len(cards) == 2:
+            a, b = sorted((c // 4 + 2 for c in cards), reverse=True)
+            return ["S", a, b, 1 if cards[0] % 4 == cards[1] % 4 else 0]
+        return list(evaluate(cards + self.board))
+
+    def result_view(self):
+        """The finished hand, kept to be looked at again during the next one."""
+        if not self.result:
+            return None
+        return {"result": self.result, "board": list(self.board), "hand": self.hand_no,
+                "seats": [{"name": s.name, "cards": s.cards if (s.shown and not s.folded) else None,
+                           "won": s.won} for s in self.seats]}
+
     def snapshot(self):
         return self.snapshot_for(None)
 
@@ -919,15 +998,12 @@ class PokerGame:
         seats = []
         for j, s in enumerate(self.seats):
             visible = bool(s.cards) and (j == me or demo or s.shown) and not (s.folded and j != me and not demo)
-            hand = ""
-            if visible and s.cards and (not self.holdem or self.board or j == me or demo):
-                hand = describe(evaluate(s.cards + self.board)) if (self.board or not self.holdem) \
-                    else describe_start(s.cards)
+            hand = self.hand_code(s.cards) if visible and s.cards else None
             seats.append({
                 "pid": s.pid, "name": s.name, "color": s.color, "bot": s.bot, "chips": s.chips,
                 "bet": s.bet, "total": s.total, "folded": s.folded, "allin": s.allin,
-                "out": s.out, "left": s.left, "waiting": s.waiting, "action": s.action,
-                "n": len(s.cards), "cards": s.cards if visible else None, "hand": hand if visible else "",
+                "out": s.out, "left": s.left, "waiting": s.waiting, "act": s.act,
+                "n": len(s.cards), "cards": s.cards if visible else None, "hand": hand,
                 "drew": s.drew, "won": s.won, "shown": s.shown,
             })
         state = {
@@ -939,6 +1015,10 @@ class PokerGame:
             "countdown": max(0, math.ceil(self.next_at - now)) if self.phase == "countdown" else 0,
             "turn_left": max(0, math.ceil(self.deadline - now)) if self.deadline else None,
             "timer": self.settings["timer"], "result": self.result, "max_draw": MAX_DRAW,
+            "last": self.last_result, "pause": self.settings["pause"],
+            "pause_left": max(0, math.ceil(self.next_at - now)) if self.phase == "showdown" else None,
+            "ready": [j for j, s in enumerate(self.seats) if s.pid in self.ready],
+            "wait_for": [j for j, s in enumerate(self.seats) if s in self.humans_to_wait()],
             "ev": dict(self.ev),
         }
         if me is not None and self.to_act == me and self.phase == "betting":

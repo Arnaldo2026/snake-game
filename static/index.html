@@ -792,7 +792,7 @@
     const r = st.results;
     $("results").classList.toggle("hidden", !r || live);
     if (r) {
-      $("resTitle").textContent = r.title;
+      $("resTitle").textContent = resultTitle(r);
       $("resList").innerHTML = r.ranking.map((p, i) => `
         <li><span class="dot" style="background:${p.color}"></span>
             <span class="name">${i + 1}. ${esc(p.name)}${p.id === me ? ' <span class="tag">(you)</span>' : ""}</span>
@@ -813,16 +813,20 @@
 
     fillGameSelect($("lbGame"), st.game_id);
     $("btnManual").classList.toggle("hidden", !(mod && mod.manual));
+    $("btnManual").textContent = mod && mod.languages && api.lang() === "it" ? "📖 Come si gioca" : "📖 How to play";
     $("lbGame").disabled = !canEdit;
 
     // settings, built from the list the game declares
+    const lang = mod && mod.languages ? api.lang() : "en";
     const html = st.schema.map((s, si) => {
       if (s.show_if && Object.entries(s.show_if).some(([k, v]) => st.settings[k] !== v)) return "";
       const cur = st.settings[s.key];
+      const tr = (s.i18n && s.i18n[lang]) || {};
       const btns = s.options.map(([val, label], oi) =>
-        `<button data-si="${si}" data-oi="${oi}" class="${val === cur ? "on" : ""}" ${canEdit ? "" : "disabled"}>${esc(label)}</button>`).join("");
-      const hint = s.hints && s.hints[cur] ? `<div class="hint">${esc(s.hints[cur])}</div>` : "";
-      return `<div><div class="label">${esc(s.label)}</div><div class="seg">${btns}</div>${hint}</div>`;
+        `<button data-si="${si}" data-oi="${oi}" class="${val === cur ? "on" : ""}" ${canEdit ? "" : "disabled"}>${esc((tr.options && tr.options[val]) || label)}</button>`).join("");
+      const hints = tr.hints || s.hints;
+      const hint = hints && hints[cur] ? `<div class="hint">${esc(hints[cur])}</div>` : "";
+      return `<div><div class="label">${esc(tr.label || s.label)}</div><div class="seg">${btns}</div>${hint}</div>`;
     }).join("");
     if ($("lbSettings").dataset.html !== html) { $("lbSettings").innerHTML = html; $("lbSettings").dataset.html = html; }
 
@@ -1107,6 +1111,15 @@
     return { w: Math.min(window.innerWidth - 32, maxW), h };
   };
 
+  // ---------------------------------------------------------- language (games that offer it: mod.languages)
+  // a personal choice per device, like the sound; the first time it follows the browser's language
+  api.lang = () => {
+    const v = store.get("ui.lang");
+    if (v === "en" || v === "it") return v;
+    return (navigator.language || "").toLowerCase().startsWith("it") ? "it" : "en";
+  };
+  const resultTitle = r => (r.titles && r.titles[api.lang()]) || r.title;
+
   // ---------------------------------------------------------- games with their own buttons (cards, menus)
   api.input = data => send(Object.assign({ type: "input" }, data));
   // clicks/taps on the board, in board pixels (games that want them provide onPointer)
@@ -1123,7 +1136,9 @@
   api.openManual = () => {
     const mod = st && gameModule(st.game_id);
     if (!mod || !mod.manual) return;
-    $("manualTitle").textContent = `${st.game_name} – how to play`;
+    const it = mod.languages && api.lang() === "it";
+    $("manualTitle").textContent = `${st.game_name} – ${it ? "come si gioca" : "how to play"}`;
+    $("btnManualClose").textContent = it ? "Chiudi" : "Close";
     $("manualBody").innerHTML = guard("opening the manual", () => mod.manual(api, st.settings)) || "";
     $("manual").classList.remove("hidden");
     $("manual").querySelector(".card").scrollTop = 0;
@@ -1193,7 +1208,10 @@
   function padLayout(gid) { return store.get(`touch.layout.${gid}`) || "classic"; }
   function renderTouchSetting(mod) {
     const show = isTouch() && mod && mod.controls && mod.controls.drag;
-    let html = `<div><div class="label">On-screen controls <span class="tag">(this device only)</span></div>
+    let html = mod && mod.languages ? `<div><div class="label">Language · Lingua <span class="tag">(this device only)</span></div>
+      <div class="seg">${[["en", "English"], ["it", "Italiano"]].map(([v, l]) =>
+        `<button data-lang="${v}" class="${api.lang() === v ? "on" : ""}">${l}</button>`).join("")}</div></div>` : "";
+    html += `<div><div class="label">On-screen controls <span class="tag">(this device only)</span></div>
       <div class="seg">${SCREEN.map(([v, label]) =>
         `<button data-screen="${v}" class="${v === screenPref ? "on" : ""}">${label}</button>`).join("")}</div>
       <div class="hint">Auto shows them on phones and tablets. Choose Always for a touch screen without a keyboard
@@ -1218,8 +1236,14 @@
     if ($("lbTouch").dataset.html !== html) { $("lbTouch").innerHTML = html; $("lbTouch").dataset.html = html; }
   }
   $("lbTouch").addEventListener("click", e => {
-    const b = e.target.closest("button[data-sens], button[data-screen], button[data-layout]");
+    const b = e.target.closest("button[data-sens], button[data-screen], button[data-layout], button[data-lang]");
     if (!b || !st) return;
+    if (b.dataset.lang) {
+      store.set("ui.lang", b.dataset.lang);
+      $("lbSettings").dataset.html = "";
+      renderLobby();
+      return;
+    }
     if (b.dataset.layout) {
       store.set(`touch.layout.${st.game_id}`, b.dataset.layout);
       renderLobby();
