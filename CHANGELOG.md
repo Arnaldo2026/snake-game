@@ -3,6 +3,13 @@
 The version is in the `VERSION` file and shows on the home screen (bottom), next to the commit it was built from.
 Bump it with every change pushed: the last number for fixes, the middle one for new features or games.
 
+## 1.4.0 – 2026-11-08
+Poker: default is now Five-card draw with the Italian short deck. Words of the game explained on demand:
+tap a move badge, the D button or the pot on the table to see what it means; "📘 Terms" opens a glossary
+(dealer/cartaro, blinds/buio and controbuio, check/bussa, call/vedi-sto, raise, fold/lascia-passo, all-in,
+stand pat/servito, side pot, kicker, pot odds, Italian deck…) with this table's facts: who deals, that play
+goes clockwise, who speaks first this round. The glossary is also in the manual (English and Italian).
+
 ## 1.3.0 – 2026-11-08
 Poker: a coloured badge beside every player with their last move (fold, check, call, raise, all-in, change N),
 "in pot" on each name plate and the list of this hand's moves round by round. New room settings: Deck –

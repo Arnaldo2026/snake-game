@@ -119,6 +119,9 @@
       history: "This hand", showHistory: "Show the moves of this hand", hideHistory: "Hide the moves",
       stages: { holdem: ["Pre-flop", "Flop", "Turn", "River"], draw: ["Before the draw", "After the draw"], drawStage: "Draw" },
       deckShort: "Deck {lo}–A ({n} cards)",
+      terms: "📘 Terms", hideTerms: "Hide the terms", tapHint: "Tip: tap a move badge or the D button on the table to see what it means.",
+      facts: "Dealer: <b>{d}</b> · play goes <b>clockwise</b> (to the left) · first to speak this round: <b>{f}</b>",
+      factsDraw: "Dealer: <b>{d}</b> · play goes <b>clockwise</b> (to the left)",
     },
     it: {
       fold: "Lascia", check: "Bussa", call: "Vedi {n}", allinN: "All-in {n}", bet: "Punta", raiseTo: "Rilancia a", allin: "All-in",
@@ -143,6 +146,9 @@
       history: "Questa mano", showHistory: "Mostra le mosse di questa mano", hideHistory: "Nascondi le mosse",
       stages: { holdem: ["Pre-flop", "Flop", "Turn", "River"], draw: ["Prima del cambio", "Dopo il cambio"], drawStage: "Cambio" },
       deckShort: "Mazzo {lo}–A ({n} carte)",
+      terms: "📘 Termini", hideTerms: "Nascondi i termini", tapHint: "Suggerimento: tocca un badge di una mossa o il bottone D sul tavolo per sapere cosa significa.",
+      facts: "Cartaro: <b>{d}</b> · si gioca in <b>senso orario</b> (verso sinistra) · parla per primo in questo giro: <b>{f}</b>",
+      factsDraw: "Cartaro: <b>{d}</b> · si gioca in <b>senso orario</b> (verso sinistra)",
     },
   };
   const t = (key, vars = {}) => {
@@ -204,6 +210,64 @@
     else s = s.replace("{r1}", rn(why[1] || 2)).replace("{r}", rp(why[1] || 2));
     return s;
   }
+
+  // ================================================================== glossary: the words of the game
+  // code -> [term, explanation]; the codes are the same as the move badges, so tapping a badge explains it
+  const GLOSS = {
+    en: {
+      dealer: ["Dealer (D)", "The player who deals this hand, marked by the D button. The button moves one seat clockwise every hand. After the first betting round the dealer always speaks last – the best seat."],
+      sb: ["Small blind", "A forced bet by the first player after the dealer, half of the big blind, put in before seeing the cards (“blind”). It starts the pot. Called “buio” in Italian."],
+      bb: ["Big blind", "A forced bet by the second player after the dealer, twice the small blind. It is the bet everybody must match in the first round; the big blind speaks last in that round and may still raise. Called “controbuio” in Italian."],
+      direction: ["Order of play", "Play goes clockwise: after you, the player on your left speaks. The cards are dealt the same way."],
+      first: ["Who speaks first", "In the first betting round: the player after the big blind. In the later rounds (and in the draw): the first player still in after the dealer."],
+      check: ["Check", "Pass without betting. Only possible when nobody has bet yet in this round."],
+      bet: ["Bet", "Be the first to put chips in during this round (“open”). The others must at least call to stay in."],
+      call: ["Call", "Put in just enough to match the highest bet and stay in the hand."],
+      raise: ["Raise", "Match the highest bet and add more. The minimum raise equals the last increase. After a raise the others must call again (or raise, or fold)."],
+      cap: ["Raise cap", "After the first bet only a limited number of raises are allowed in each betting round; then you can only call or fold."],
+      fold: ["Fold", "Give up the hand. The chips you already put in stay in the pot."],
+      allin: ["All-in", "Bet all your chips. You stay in until the showdown for what you put in; extra chips the others bet go to a side pot."],
+      draw: ["Change cards", "Five-card draw: after the first betting round each player may throw away up to 4 cards and get new ones."],
+      pat: ["Stand pat", "Change no cards. It usually means a made hand… or a bluff."],
+      pot: ["Pot", "All the chips bet in this hand. The best hand at the showdown wins it – or the last player left when all the others fold."],
+      side: ["Side pot", "When someone is all-in, the chips the others keep betting form a separate pot that only they can win."],
+      hand: ["Showdown", "After the last betting round the remaining players show their cards; the best five-card hand wins."],
+      kicker: ["Kicker", "When two hands are the same (e.g. both a pair of Kings), the highest remaining card decides."],
+      odds: ["Pot odds", "Price of a call compared with the pot: calling 20 to win 100 is worth it if you win more than 20% of the time."],
+      shortdeck: ["Italian deck", "Lowest card = 11 − number of players (4 players: 7 to Ace). Flush beats full house; A-7-8-9-10 is the lowest straight."],
+      left: ["Left", "The player has left the match."],
+    },
+    it: {
+      dealer: ["Cartaro (D)", "Chi distribuisce le carte in questa mano, segnato dal bottone D. Il bottone passa al giocatore successivo (in senso orario) a ogni mano. Dopo il primo giro il cartaro parla sempre per ultimo – il posto migliore."],
+      sb: ["Buio (piccolo buio)", "Puntata obbligatoria del primo giocatore dopo il cartaro, metà del controbuio, messa prima di vedere le carte («al buio»). Fa partire il piatto."],
+      bb: ["Controbuio (grande buio)", "Puntata obbligatoria del secondo giocatore dopo il cartaro, il doppio del buio. È la puntata che tutti devono pareggiare nel primo giro; chi l'ha messa parla per ultimo in quel giro e può ancora rilanciare."],
+      direction: ["Senso di gioco", "Si gioca in senso orario: dopo di te parla il giocatore alla tua sinistra. Anche le carte si distribuiscono così."],
+      first: ["Chi parla per primo", "Nel primo giro di puntate: il giocatore dopo il controbuio. Nei giri successivi (e nel cambio): il primo giocatore ancora in gioco dopo il cartaro."],
+      check: ["Bussa", "Passi la parola senza puntare (detto anche «parola», in inglese check). Si può solo se in questo giro nessuno ha ancora puntato."],
+      bet: ["Punta (apri)", "Sei il primo a mettere fiches in questo giro («apro»). Gli altri, per restare in gioco, devono almeno vedere."],
+      call: ["Vedi (sto)", "Metti quanto serve per pareggiare la puntata più alta e resti in gioco (si dice anche «sto», «chiamo» – in inglese call)."],
+      raise: ["Rilancia", "Pareggi la puntata più alta e aggiungi. Il rilancio minimo è uguale all'ultimo aumento. Dopo un rilancio gli altri devono vedere di nuovo (o rilanciare, o lasciare)."],
+      cap: ["Limite di rilanci", "Dopo la prima puntata, in ogni giro si può rilanciare solo un certo numero di volte; poi si può solo vedere o lasciare."],
+      fold: ["Lascia (passo)", "Abbandoni la mano (si dice anche «passo», «mi ritiro» – in inglese fold). Le fiches già messe restano nel piatto."],
+      allin: ["All-in", "Punti tutte le tue fiches. Resti in gioco fino allo showdown per quello che hai messo; le fiches in più degli altri vanno in un piatto laterale."],
+      draw: ["Cambio", "Poker classico: dopo il primo giro di puntate ognuno può scartare fino a 4 carte e riceverne altrettante nuove."],
+      pat: ["Servito", "Non cambi nessuna carta. Di solito vuol dire una mano già fatta… oppure un bluff."],
+      pot: ["Piatto", "Tutte le fiches puntate nella mano. Lo vince la mano migliore allo showdown – o l'ultimo rimasto quando tutti gli altri lasciano."],
+      side: ["Piatto laterale", "Quando qualcuno è all-in, le fiches che gli altri continuano a puntare formano un piatto a parte che solo loro possono vincere."],
+      hand: ["Showdown", "Dopo l'ultimo giro di puntate chi è rimasto mostra le carte; vince la miglior mano di cinque carte."],
+      kicker: ["Kicker (carta di spareggio)", "Quando due mani sono uguali (per esempio entrambe una coppia di Re), decide la carta più alta tra le rimanenti."],
+      odds: ["Pot odds (quota del piatto)", "Il prezzo per vedere rispetto al piatto: vedere 20 per vincere 100 conviene se vinci più del 20% delle volte."],
+      shortdeck: ["Mazzo all'italiana", "Carta più bassa = 11 − numero di giocatori (in 4: dal 7 all'Asso). Il colore batte il full; A-7-8-9-10 è la scala più bassa."],
+      left: ["Uscito", "Il giocatore ha lasciato la partita."],
+    },
+  };
+  const GLOSS_ORDER = ["dealer", "direction", "first", "sb", "bb", "check", "bet", "call", "raise", "cap", "fold", "allin",
+                       "draw", "pat", "pot", "side", "hand", "kicker", "odds", "shortdeck"];
+  const glossCode = c => ({ sb: "sb", bb: "bb", fold: "fold", check: "check", call: "call", bet: "bet", raise: "raise",
+                            allin: "allin", draw: "draw", pat: "pat", left: "left", hand: "hand" })[c] || c;
+  let explain = null;            // a term tapped on the table, explained in the panel
+  let showGloss = false;         // the glossary is open
+  let tips = [];                 // tappable things on the table: badges, the D button, the pot
 
   // ================================================================== table geometry
   // two table shapes: wide (PCs, sideways phones) and tall (phones held upright)
@@ -385,6 +449,7 @@
 
     // seats
     hits = [];
+    tips = [{ code: "pot", x: (L.cx - 90) * k, y: (L.potY - 18) * k, w: 180 * k, h: 36 * k }];
     g.seats.forEach((s, j) => drawSeat(ctx, g, s, j, pos[j], winners.has(j), best[j]));
 
     // dealer button, beside the dealer's name plate on the side facing the middle
@@ -394,6 +459,7 @@
       ctx.beginPath(); ctx.arc(bx * k, by * k, 12 * k, 0, Math.PI * 2);
       ctx.fillStyle = "#f8fafc"; ctx.fill(); ctx.strokeStyle = "#111"; ctx.lineWidth = Math.max(1, k); ctx.stroke();
       text(ctx, "D", bx, by + 1, 12, "#111", 900);
+      tips.push({ code: "dealer", x: (bx - 20) * k, y: (by - 20) * k, w: 40 * k, h: 40 * k });
     }
 
     // top bar and keys line
@@ -495,7 +561,10 @@
     // what they did last: a coloured badge on top of the name plate (dashed: a computer move about to happen)
     const pend = g.pending && g.pending.seat === j ? g.pending.act : null;
     const shown = pend || (s.allin && !(s.act && (s.act[0] === "allin" || s.act[0] === "hand")) ? ["allin", s.total] : s.act);
-    if (shown && !gone) badge(ctx, shown, X + 4, Y, pw * 0.86, !!pend, isWinner);
+    if (shown && !gone) {
+      const r = badge(ctx, shown, X + 4, Y, pw * 0.86, !!pend, isWinner);
+      tips.push(Object.assign({ code: glossCode(shown[0]) }, r));
+    }
 
     // whose turn: a shrinking bar under the plate
     if (turn && g.turn_left != null && g.timer) {
@@ -536,6 +605,7 @@
     ctx.fillStyle = "#fff"; ctx.textAlign = "left"; ctx.textBaseline = "middle";
     ctx.fillText(s, (x + 7) * k, (y - h * 0.62 + h / 2) * k);
     ctx.restore();
+    return { x: x * k - 4, y: (y - h * 0.62) * k - 4, w: w * k + 8, h: h * k + 8 };
   }
 
   // ================================================================== the panel (HTML)
@@ -545,6 +615,20 @@
   function miniCards(list, bestSet, winner) {
     return `<span class="pk-cards">${(list || []).map(c =>
       `<span class="pkc${red(c) ? " r" : ""}${bestSet && !bestSet.has(c) ? " off" : ""}${winner && bestSet && bestSet.has(c) ? " w" : ""}">${label(c)}${SUIT[suitOf(c)]}</span>`).join("")}</span>`;
+  }
+
+  // who speaks first in the current round: after the big blind in the first round, otherwise after the dealer
+  function firstToSpeak(g) {
+    const n = g.seats.length;
+    if (!n || g.dealer == null || g.dealer < 0 || !["betting", "draw"].includes(g.phase)) return null;
+    const live = j => g.seats[j].n && !g.seats[j].folded && !g.seats[j].out && !g.seats[j].left;
+    let from = g.dealer;
+    if (g.phase === "betting" && g.street === 0) {
+      const bb = (g.log || []).find(e => e[2] && e[2][0] === "bb");
+      if (bb) from = bb[0];
+    }
+    for (let k2 = 1; k2 <= n; k2++) { const j = (from + k2) % n; if (live(j)) return j; }
+    return null;
   }
 
   // every move of this hand, grouped by betting round
@@ -618,6 +702,12 @@
     .pk-log b { color: var(--muted); font-weight: 700; margin-right: 4px; }
     .pk-mv { white-space: nowrap; margin-right: 8px; } .pk-mv i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 4px; }
     .pk-pend { border-left-color: #facc15; background: rgba(250, 204, 21, .10); }
+    .pk-explain { position: relative; background: rgba(16, 185, 129, .13); border-left: 3px solid #10b981; border-radius: 8px;
+                  padding: 8px 30px 8px 10px; font-size: 13.5px; line-height: 1.4; }
+    .pk-x { position: absolute; top: 4px; right: 4px; padding: 2px 7px; font-size: 13px; }
+    .pk-gloss { background: rgba(255,255,255,.04); border-radius: 8px; padding: 8px 10px; font-size: 13px; line-height: 1.4; }
+    .pk-gloss dl { margin: 6px 0 0; } .pk-gloss dt { font-weight: 800; margin-top: 6px; } .pk-gloss dd { margin: 0; color: var(--text); opacity: .9; }
+    .pk-facts { margin-bottom: 4px; }
     .pk-link { background: none; border: 0; color: var(--muted); text-decoration: underline; padding: 2px 0; font-size: 13px; align-self: flex-start; }
     body.landscape #gamePanel { padding-top: 92px; }
     @media (max-width: 600px) { .pk-shown td:first-child { display: none; } }
@@ -642,7 +732,7 @@
 
     const key = JSON.stringify([LANG, g.phase, g.to_act, g.hand, o, g.advice, myTurn && g.phase === "draw" ? [...sel] : 0,
                                 g.cap, g.raises, g.pot, mySeat && mySeat.chips, g.seats.map(s => s.act), g.ready, showLast,
-                                g.phase === "showdown" ? g.result : 0, g.pending, g.log && g.log.length, showLog]);
+                                g.phase === "showdown" ? g.result : 0, g.pending, g.log && g.log.length, showLog, explain, showGloss]);
     const timeLeft = g.phase === "showdown" ? (g.pause ? ` · ${t("nextIn", { n: g.pause_left })}` : "")
                    : g.turn_left != null ? ` · ${g.turn_left}s` : "";
     if (key === panelKey) {
@@ -733,11 +823,27 @@
       }
     }
 
+    // a word tapped on the table, and the glossary with this table's facts
+    let terms = "";
+    if (explain && GLOSS[LANG][explain]) {
+      const [term, txt] = GLOSS[LANG][explain];
+      terms += `<div class="pk-explain"><button class="pk-x" data-act="explain-close" aria-label="close">✕</button><b>${term}</b> – ${txt}</div>`;
+    }
+    terms += `<button class="pk-link" data-act="gloss">${showGloss ? t("hideTerms") : t("terms")}</button>`;
+    if (showGloss) {
+      const dealer = g.dealer != null && g.dealer >= 0 ? (g.dealer === me ? t("you") : api.esc(g.seats[g.dealer].name)) : "–";
+      const f = firstToSpeak(g);
+      const fName = f == null ? "–" : f === me ? t("you") : api.esc(g.seats[f].name);
+      terms += `<div class="pk-gloss"><div class="pk-facts">${f == null ? t("factsDraw", { d: dealer }) : t("facts", { d: dealer, f: fName })}</div>
+        <div class="pk-info">${t("tapHint")}</div>
+        <dl>${GLOSS_ORDER.map(c => `<dt>${GLOSS[LANG][c][0]}</dt><dd>${GLOSS[LANG][c][1]}</dd>`).join("")}</dl></div>`;
+    }
+
     panel.innerHTML = `${STYLE}
       <div class="pk-wrap">
         <div class="pk-head">${api.esc(head)}<span id="pkTime" class="pk-info">${timeLeft}</span></div>
         <div class="pk-info">${info}</div>
-        ${body}
+        ${body}${terms}
       </div>`;
   }
 
@@ -772,6 +878,8 @@
     const g = api.st().game, o = g.options;
     if (what === "last") { showLast = !showLast; render(api); return true; }
     if (what === "log") { showLog = !showLog; render(api); return true; }
+    if (what === "gloss") { showGloss = !showGloss; render(api); return true; }
+    if (what === "explain-close") { explain = null; render(api); return true; }
     if (what === "continue") { if (g.pending) api.input({ action: "continue" }); return true; }
     if (what === "ready") { if (g.phase === "showdown") api.input({ action: "ready" }); return true; }
     if (g.to_act !== g.me || g.me == null) return false;
@@ -838,8 +946,22 @@
   }
 
   function onPointer(api, x, y) {
-    for (const h of hits) {
-      if (x >= h.x && x <= h.x + h.w && y >= h.y && y <= h.y + h.h) { toggle(api, h.i); return; }
+    const g = api.st().game;
+    if (g.phase === "draw" && g.to_act === g.me) {
+      for (const h of hits) {
+        if (x >= h.x && x <= h.x + h.w && y >= h.y && y <= h.y + h.h) { toggle(api, h.i); return; }
+      }
+    }
+    // a badge, the D button or the pot: explain the word in the panel
+    for (let n = tips.length - 1; n >= 0; n--) {
+      const h = tips[n];
+      if (x >= h.x && x <= h.x + h.w && y >= h.y && y <= h.y + h.h && GLOSS[LANG][h.code]) {
+        explain = explain === h.code ? null : h.code;
+        render(api);
+        const box = api.$("gamePanel").querySelector(".pk-explain");
+        if (box) box.scrollIntoView({ block: "nearest", behavior: "smooth" });
+        return;
+      }
     }
   }
 
@@ -895,6 +1017,7 @@
       .pk-rank td { padding: 6px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
       .pk-rank td:first-child { font-weight: 800; color: var(--muted); }
       .pk-rank .odds { color: var(--muted); font-size: 12px; white-space: nowrap; }
+      .pk-gl dt { font-weight: 800; margin-top: 8px; } .pk-gl dd { margin: 2px 0 0 0; }
       @media (max-width: 600px) { .pk-rank .odds { display: none; } .pkc { min-width: 24px; font-size: 12px; } }
     </style>`;
   const EXAMPLES = ["As Ks Qs Js 10s", "9h 8h 7h 6h 5h", "Kc Kd Kh Ks 2d", "Qs Qd Qh 3c 3d", "Ah 9h 7h 4h 2h",
@@ -959,6 +1082,8 @@
         <li>In a straight the Ace can be low (A-2-3-4-5, the lowest straight) or high (10-J-Q-K-A), but not in the middle (Q-K-A-2-3 is no straight).</li>
       </ul>
       ${v === "draw" ? draw + holdem : holdem + draw}
+      <h3>Words of the game</h3>
+      <dl class="pk-gl">${GLOSS_ORDER.map(c => `<dt>${GLOSS.en[c][0]}</dt><dd>${GLOSS.en[c][1]}</dd>`).join("")}</dl>
       <h3>Betting</h3>
       <ul>
         <li><b>Check</b> – pass without betting (only when nobody has bet in this round).</li>
@@ -1051,6 +1176,8 @@
         <li>Le figure sono indicate con le lettere inglesi: J = Fante, Q = Donna, K = Re, A = Asso.</li>
       </ul>
       ${v === "draw" ? draw + holdem : holdem + draw}
+      <h3>Le parole del gioco</h3>
+      <dl class="pk-gl">${GLOSS_ORDER.map(c => `<dt>${GLOSS.it[c][0]}</dt><dd>${GLOSS.it[c][1]}</dd>`).join("")}</dl>
       <h3>Le puntate</h3>
       <ul>
         <li><b>Bussa</b> (check) – passi senza puntare (solo se nessuno ha puntato in questo giro).</li>

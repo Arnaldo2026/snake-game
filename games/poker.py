@@ -228,7 +228,7 @@ class PokerGame:
     name = "Poker"
     max_players = MAX_SEATS
     SETTINGS = [
-        {"key": "variant", "label": "Variant", "default": "holdem",
+        {"key": "variant", "label": "Variant", "default": "draw",
          "options": [["holdem", "Texas Hold'em"], ["draw", "Five-card draw"]],
          "hints": {"holdem": "2 cards each + 5 shared on the table (flop, turn, river). Four betting rounds.",
                    "draw": "5 cards each, a betting round, change up to 4 cards, a second betting round."},
@@ -270,7 +270,7 @@ class PokerGame:
          "hints": {1: "Playing alone you face the computer; with friends in the room all players are human."},
          "i18n": {"it": {"label": "Giocatori del computer (se giochi da solo)",
                          "hints": {1: "Da solo giochi contro il computer; con amici nella stanza giocano solo persone."}}}},
-        {"key": "deck", "label": "Deck", "default": "full",
+        {"key": "deck", "label": "Deck", "default": "short",
          "options": [["full", "52 cards"], ["short", "Italian (short)"]],
          "hints": {"full": "All 52 cards, 2 to Ace.",
                    "short": "Lowest card = 11 − number of players (4 players: 7 to Ace, 32 cards). "
