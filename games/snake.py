@@ -14,6 +14,7 @@ This module only knows the Snake rules. The interface every game provides:
     quit(pid), remove(pid)               player left the match / the room
     can_drop_in(), drop_in(pid)          optional: join a running match
     snapshot() -> dict                   game part of the state sent to browsers
+    snapshot_for(pid) -> dict            optional: a different view per player (hidden cards)
 """
 
 import random

@@ -17,6 +17,7 @@ link, or the QR code.
 | `games/battlezone.py` | Battlezone simulation seen from above: twin-track tanks, obstacles, computer enemies (one player), versus (2-4) |
 | `games/pong.py` | Pong Tennis: squash against the wall alone, 1 or 2 bars per side for 2-4 players |
 | `games/breakout.py` | Breakout / Super Breakout: Classic, Double, Cavity and Progressive walls for 1-4 players |
+| `games/poker.py` | Poker: Texas Hold'em or Five-card draw, 2-6 players (computer players when alone), blinds, raise cap, side pots, advice and Demo mode; each player gets only their own cards |
 | `static/index.html` | The page: home, lobby, game screen, join prompts, sounds |
 | `static/games/snake.js` | Snake drawing, scoreboard, sounds and controls (runs in the browser) |
 | `static/games/spacewars.js` | Space Wars vector drawing, scoreboard, sounds and controls |
@@ -25,6 +26,7 @@ link, or the QR code.
 | `static/games/battlezone.js` | Battlezone first-person wireframe 3D view, radar, warnings, arena map, sounds |
 | `static/games/pong.js` | Pong Tennis court, block-digit scores, classic beeps, knob-style lever |
 | `static/games/breakout.js` | Breakout wall and paddles, brick beeps, horizontal paddle knob on phones |
+| `static/games/poker.js` | Poker table, cards, action panel, advice box, card sounds and the How-to-play manual |
 | `static/games/<id>.svg` | Picture of each game for the home screen |
 
 ## Run locally

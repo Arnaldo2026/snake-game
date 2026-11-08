@@ -191,7 +191,7 @@
   #admit .row button { flex: 1 1 auto; padding: 9px 10px; font-size: 14px; }
 
   /* home screen: a picture tile for each game fills the background */
-  body > *:not(#gallery):not(#float):not(#modal):not(.stick):not(#appVersion) { position: relative; z-index: 1; }
+  body > *:not(#gallery):not(#float):not(#modal):not(#manual):not(.stick):not(#appVersion) { position: relative; z-index: 1; }
   /* two rows of half-screen cartridges; empty slots say INSERT CARTRIDGE */
   #gallery { position: fixed; inset: 0; z-index: 0; display: grid;
              grid-template-columns: repeat(4, 1fr); grid-template-rows: repeat(2, 50vh); }
@@ -249,6 +249,24 @@
   #modal { position: fixed; inset: 0; background: rgba(0, 0, 0, .6); display: flex; align-items: center;
            justify-content: center; padding: 16px; z-index: 30; }
   #modal .card { max-width: 340px; }
+  /* a game's own action panel (e.g. poker buttons): under the board, or beside it on a sideways phone */
+  #gamePanel { width: 100%; max-width: 960px; }
+  #gamePanel:empty { display: none; }
+  body.landscape #gamePanel { width: 280px; max-width: 280px; flex: none; align-self: stretch; overflow-y: auto;
+                              max-height: calc(100vh - 12px); }
+  /* "How to play" manual a game can provide */
+  #manual { position: fixed; inset: 0; background: rgba(0, 0, 0, .65); display: flex; align-items: center;
+            justify-content: center; padding: 12px; z-index: 40; }
+  #manual .card { max-width: 760px; width: 100%; max-height: calc(100vh - 24px); overflow-y: auto; gap: 6px; }
+  #manual .mhead { display: flex; justify-content: space-between; align-items: center; gap: 10px;
+                   position: sticky; top: -16px; background: var(--card); padding: 4px 0 8px; z-index: 1; }
+  #manual .title { font-size: 20px; font-weight: 800; }
+  #manualBody { line-height: 1.5; font-size: 15px; }
+  #manualBody h3 { margin: 16px 0 6px; font-size: 16px; color: var(--accent); }
+  #manualBody p { margin: 6px 0; }
+  #manualBody ul, #manualBody ol { margin: 6px 0; padding-left: 22px; list-style: revert; display: block; }
+  #manualBody li { display: list-item; background: none; padding: 2px 0; }
+  #btnManual { margin-top: -2px; }
   #modal .title { font-size: 18px; font-weight: 700; }
   #modal .row button { flex: 1; }
 </style>
@@ -309,6 +327,7 @@
 
     <div class="label">Game</div>
     <select id="lbGame"></select>
+    <button id="btnManual" class="hidden">📖 How to play</button>
     <div id="lbSettings"></div>
     <div id="lbTouch"></div>
 
@@ -330,6 +349,7 @@
       <div id="overlay"></div>
       <div id="msg" class="hidden"><div class="big" id="msgBig"></div><div class="small" id="msgSmall"></div></div>
     </div>
+    <div id="gamePanel"></div>
     <div id="pad" class="pad"></div>
     </div>
     <div id="dragHint"></div>
@@ -350,6 +370,13 @@
       </div>
     </div>
     <div id="toasts" style="display:flex;flex-direction:column;gap:8px"></div>
+  </div>
+
+  <div id="manual" class="hidden">
+    <div class="card" role="dialog" aria-modal="true" aria-labelledby="manualTitle">
+      <div class="mhead"><div class="title" id="manualTitle"></div><button id="btnManualClose">Close</button></div>
+      <div id="manualBody"></div>
+    </div>
   </div>
 
   <div id="modal" class="hidden">
@@ -785,6 +812,7 @@
           ${p.wins ? `<span class="tag">${p.wins} win${p.wins > 1 ? "s" : ""}</span>` : ""}</li>`).join("");
 
     fillGameSelect($("lbGame"), st.game_id);
+    $("btnManual").classList.toggle("hidden", !(mod && mod.manual));
     $("lbGame").disabled = !canEdit;
 
     // settings, built from the list the game declares
@@ -930,6 +958,7 @@
     }
     $("keysHelp").textContent = controls.help || "";
     $("overlay").innerHTML = "";
+    $("gamePanel").innerHTML = "";
     gameTools = mod.tools || [];
     $("gameTools").innerHTML = gameTools.map(t =>
       `<button data-tool="${esc(t.id)}" title="${esc(t.title || "")}" aria-label="${esc(t.title || t.id)}">${t.label}</button>`).join("");
@@ -969,9 +998,12 @@
   const keyName = e => (e.key.length === 1 ? e.key.toLowerCase() : e.key);
 
   window.addEventListener("keydown", e => {
+    if (manualOpen()) { if (e.key === "Escape") closeManual(); return; }
     if (modalOpen()) { if (e.key === "Escape") closeModal(); return; }
-    if (e.target.tagName === "INPUT" || e.target.tagName === "SELECT") return;
+    if ((e.target.tagName === "INPUT" && e.target.type !== "range") || e.target.tagName === "SELECT") return;
     if (e.key === "Escape" && screen() === "game" && st.state === "match") { releaseAll(); openModal(); return; }
+    const gmod = screen() === "game" && st && gameModule(st.game_id);
+    if (gmod && gmod.onKey && !e.repeat && guard("a game key", () => gmod.onKey(api, keyName(e)))) { e.preventDefault(); return; }
     const tool = screen() === "game" && gameTools.find(t => t.key === keyName(e));
     if (tool) { e.preventDefault(); if (!e.repeat) useTool(tool.id); return; }
     const ctl = controls.keys[keyName(e)];
@@ -1063,17 +1095,43 @@
   // width between the two button groups.
   api.space = (maxW, reserve) => {
     if (landscape()) {
-      const pads = [$("padL"), $("pad")].reduce((w, el) => w + (el.offsetWidth ? el.offsetWidth + 14 : 0), 0);
+      const pads = [$("padL"), $("pad"), $("gamePanel")].reduce((w, el) => w + (el.offsetWidth ? el.offsetWidth + 14 : 0), 0);
       const hud = document.body.classList.contains("in-game") ? 0 : ($("hud").offsetHeight || 30);
       return { w: Math.max(200, window.innerWidth - 20 - pads), h: Math.max(160, window.innerHeight - hud - 16) };
     }
-    let h = window.innerHeight - reserve;
+    let h = window.innerHeight - reserve - ($("gamePanel").offsetHeight ? $("gamePanel").offsetHeight + 8 : 0);
     if (isTouch() && $("pad").offsetHeight) {
       const top = $("wrap").getBoundingClientRect().top + window.scrollY;
       h = Math.min(h, window.innerHeight - top - $("pad").offsetHeight - 36);
     }
     return { w: Math.min(window.innerWidth - 32, maxW), h };
   };
+
+  // ---------------------------------------------------------- games with their own buttons (cards, menus)
+  api.input = data => send(Object.assign({ type: "input" }, data));
+  // clicks/taps on the board, in board pixels (games that want them provide onPointer)
+  canvas.addEventListener("pointerdown", e => {
+    const mod = screen() === "game" && st && gameModule(st.game_id);
+    if (!mod || !mod.onPointer) return;
+    const r = canvas.getBoundingClientRect();
+    guard("a click on the board", () => mod.onPointer(api, e.clientX - r.left, e.clientY - r.top));
+  });
+
+  // ---------------------------------------------------------- "How to play" manual
+  const manualOpen = () => !$("manual").classList.contains("hidden");
+  function closeManual() { $("manual").classList.add("hidden"); }
+  api.openManual = () => {
+    const mod = st && gameModule(st.game_id);
+    if (!mod || !mod.manual) return;
+    $("manualTitle").textContent = `${st.game_name} – how to play`;
+    $("manualBody").innerHTML = guard("opening the manual", () => mod.manual(api, st.settings)) || "";
+    $("manual").classList.remove("hidden");
+    $("manual").querySelector(".card").scrollTop = 0;
+    $("btnManualClose").focus();
+  };
+  $("btnManual").onclick = () => api.openManual();
+  $("btnManualClose").onclick = closeManual;
+  $("manual").addEventListener("click", e => { if (e.target.id === "manual") closeManual(); });
 
   // Tell the server the shape of the space this screen has for a board (Space Wars' Auto arena uses it
   // to pick an arena that suits everybody). Estimated from the window, as the board isn't shown yet.

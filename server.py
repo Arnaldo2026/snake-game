@@ -174,7 +174,9 @@ class Room:
         self.dirty = True
 
     # ------------------------------------------------ networking
-    def snapshot(self):
+    def snapshot(self, pid=None):
+        # games with hidden information (cards) give each player their own view: snapshot_for(pid)
+        game = self.game.snapshot_for(pid) if hasattr(self.game, "snapshot_for") else self.game.snapshot()
         return {
             "type": "state",
             "code": self.code,
@@ -192,17 +194,18 @@ class Room:
             "notices": self.notices,
             "players": [{"id": p.id, "name": p.name, "color": p.color, "wins": p.wins,
                          "waiting": p.waiting, "quit": p.quit} for p in self.players.values()],
-            "game": self.game.snapshot(),
+            "game": game,
         }
 
     async def broadcast(self):
-        msg = json.dumps(self.snapshot())
-        self.notices = []
+        private = hasattr(self.game, "snapshot_for")
+        msg = None if private else json.dumps(self.snapshot())
         for p in list(self.players.values()):
             try:
-                await p.ws.send_str(msg)
+                await p.ws.send_str(json.dumps(self.snapshot(p.id)) if private else msg)
             except Exception:
                 pass
+        self.notices = []
 
     async def run(self):
         try:

@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300" preserveAspectRatio="xMidYMid slice">
+  <defs>
+    <radialGradient id="felt" cx="50%" cy="50%" r="60%">
+      <stop offset="0" stop-color="#15803d"/><stop offset="1" stop-color="#0a3f20"/>
+    </radialGradient>
+    <g id="card"><rect x="-26" y="-37" width="52" height="74" rx="5" fill="#fdfdfb" stroke="#cbd5e1"/></g>
+  </defs>
+  <rect width="400" height="300" fill="#0b1220"/>
+  <ellipse cx="200" cy="160" rx="215" ry="125" fill="#5b3a1e"/>
+  <ellipse cx="200" cy="160" rx="200" ry="112" fill="url(#felt)"/>
+  <!-- a royal flush fanned out -->
+  <g font-family="Georgia, 'Times New Roman', serif" font-weight="bold">
+    <g transform="translate(130 150) rotate(-24)"><use href="#card"/><text x="-20" y="-18" font-size="17" fill="#111827">10</text><text x="-2" y="20" font-size="30" fill="#111827">♠</text></g>
+    <g transform="translate(163 138) rotate(-12)"><use href="#card"/><text x="-20" y="-18" font-size="17" fill="#111827">J</text><text x="-2" y="20" font-size="30" fill="#111827">♠</text></g>
+    <g transform="translate(200 134)"><use href="#card"/><text x="-20" y="-18" font-size="17" fill="#111827">Q</text><text x="-2" y="20" font-size="30" fill="#111827">♠</text></g>
+    <g transform="translate(237 138) rotate(12)"><use href="#card"/><text x="-20" y="-18" font-size="17" fill="#111827">K</text><text x="-2" y="20" font-size="30" fill="#111827">♠</text></g>
+    <g transform="translate(270 150) rotate(24)"><use href="#card"/><text x="-20" y="-18" font-size="17" fill="#111827">A</text><text x="-2" y="20" font-size="30" fill="#111827">♠</text></g>
+  </g>
+  <!-- chips -->
+  <g stroke="#fff" stroke-width="2">
+    <ellipse cx="96" cy="226" rx="17" ry="8" fill="#ef4444"/><ellipse cx="96" cy="220" rx="17" ry="8" fill="#ef4444"/>
+    <ellipse cx="96" cy="214" rx="17" ry="8" fill="#3b82f6"/><ellipse cx="96" cy="208" rx="17" ry="8" fill="#22c55e"/>
+    <ellipse cx="306" cy="230" rx="17" ry="8" fill="#f59e0b"/><ellipse cx="306" cy="224" rx="17" ry="8" fill="#a855f7"/>
+    <ellipse cx="282" cy="236" rx="17" ry="8" fill="#ef4444"/>
+  </g>
+  <circle cx="200" cy="232" r="13" fill="#f8fafc" stroke="#111" stroke-width="1.5"/>
+  <text x="200" y="237" font-family="system-ui, sans-serif" font-size="14" font-weight="900" text-anchor="middle" fill="#111">D</text>
+</svg>

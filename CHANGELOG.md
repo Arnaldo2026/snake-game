@@ -3,6 +3,15 @@
 The version is in the `VERSION` file and shows on the home screen (bottom), next to the commit it was built from.
 Bump it with every change pushed: the last number for fixes, the middle one for new features or games.
 
+## 1.1.0 – 2026-11-08
+New game: Poker – Texas Hold'em or Five-card draw (host's choice), 2–6 players; alone you play against
+1–5 computer players. Same starting chips for all, blinds, a cap on raises per betting round, side pots,
+time to act, matches of 10/20 hands or last one standing. Modes: Normal, Advice (your hand, chance to win,
+pot odds, suggested move, cards to change) and Demo (all cards face up, advice for everyone).
+"How to play" manual with the ranking of hands (room screen and 📖 in the game).
+Platform: per-player state (hidden cards never leave the server), a game action panel, board clicks,
+game keyboard shortcuts and the manual window.
+
 ## 1.0.1 – 2026-10-21
 Version number easier to find: a badge in the bottom-right corner on PCs, at the end of the page on phones.
 

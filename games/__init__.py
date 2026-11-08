@@ -10,9 +10,10 @@ from .asteroids import AsteroidsGame
 from .battlezone import BattlezoneGame
 from .breakout import BreakoutGame
 from .lander import LanderGame
+from .poker import PokerGame
 from .pong import PongGame
 from .snake import SnakeGame
 from .spacewars import SpaceWarsGame
 
-GAMES = {g.id: g for g in (SnakeGame, SpaceWarsGame, AsteroidsGame, LanderGame, BattlezoneGame, PongGame, BreakoutGame)}
+GAMES = {g.id: g for g in (SnakeGame, SpaceWarsGame, AsteroidsGame, LanderGame, BattlezoneGame, PongGame, BreakoutGame, PokerGame)}
 DEFAULT_GAME = "snake"
