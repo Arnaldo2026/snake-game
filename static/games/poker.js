@@ -113,8 +113,12 @@
       foldWin: "{who} wins {n} – everyone else folded. Cards are not shown.",
       side: "Side pot {n}", next: "Next hand", nextIn: "next hand in {n} s", ready: "{a}/{b} ready",
       waitOthers: "Waiting for the others…", last: "Last hand", hide: "Hide", resultOf: "Hand {n} – result",
-      why: "Why", allinTag: "All-in", keys: "F fold · C check/call · R raise · A all-in · ↑↓ amount · H advice · N next hand · ? rules · Esc exit",
+      why: "Why", allinTag: "All-in", keys: "F fold · C check/call · R raise · A all-in · ↑↓ amount · H advice · Enter continue / next hand · ? rules · Esc exit",
       liveHand: "hand {n}{of}", of: " of {n}", chips: "{n} chips", outOf: "out of chips", starting: "starting",
+      inPot: "in pot {n}", cont: "Continue", willDo: "{name} will: {act}", reasoning: "Reasoning:",
+      history: "This hand", showHistory: "Show the moves of this hand", hideHistory: "Hide the moves",
+      stages: { holdem: ["Pre-flop", "Flop", "Turn", "River"], draw: ["Before the draw", "After the draw"], drawStage: "Draw" },
+      deckShort: "Deck {lo}–A ({n} cards)",
     },
     it: {
       fold: "Lascia", check: "Bussa", call: "Vedi {n}", allinN: "All-in {n}", bet: "Punta", raiseTo: "Rilancia a", allin: "All-in",
@@ -133,8 +137,12 @@
       foldWin: "{who} vince {n} – gli altri hanno lasciato. Le carte non si mostrano.",
       side: "Piatto laterale {n}", next: "Prossima mano", nextIn: "prossima mano tra {n} s", ready: "{a}/{b} pronti",
       waitOthers: "In attesa degli altri…", last: "Mano precedente", hide: "Nascondi", resultOf: "Mano {n} – risultato",
-      why: "Perché", allinTag: "All-in", keys: "F lascia · C bussa/vedi · R rilancia · A all-in · ↑↓ importo · H consiglio · N prossima mano · ? regole · Esc esci",
+      why: "Perché", allinTag: "All-in", keys: "F lascia · C bussa/vedi · R rilancia · A all-in · ↑↓ importo · H consiglio · Invio continua / prossima mano · ? regole · Esc esci",
       liveHand: "mano {n}{of}", of: " di {n}", chips: "{n} fiches", outOf: "senza fiches", starting: "in partenza",
+      inPot: "nel piatto {n}", cont: "Continua", willDo: "{name} farà: {act}", reasoning: "Ragionamento:",
+      history: "Questa mano", showHistory: "Mostra le mosse di questa mano", hideHistory: "Nascondi le mosse",
+      stages: { holdem: ["Pre-flop", "Flop", "Turn", "River"], draw: ["Prima del cambio", "Dopo il cambio"], drawStage: "Cambio" },
+      deckShort: "Mazzo {lo}–A ({n} carte)",
     },
   };
   const t = (key, vars = {}) => {
@@ -152,6 +160,8 @@
       call: "About {p} to win; calling {c} into {pot} needs only {need}: call.",
       call_cheap: "About {p} to win and it's cheap ({c}): call and see.",
       fold: "About {p} to win, but calling {c} into {pot} needs {need}: fold.",
+      bluff: "About {p} to win against {o}: not much, but a small bet now and then keeps the others guessing (a bluff).",
+      stubborn: "About {p} to win: not really enough, but the call is cheap ({c}) – a stubborn call.",
       made: "{h} – a made hand: keep all five (stand pat).",
       trips: "Keep the three {r}, change the other two.",
       twopair: "Keep both pairs, change the odd card: 1 chance in 11 to make a full house.",
@@ -169,6 +179,8 @@
       call: "Circa {p} di vincere; vedere {c} su un piatto di {pot} richiede solo il {need}: vedi.",
       call_cheap: "Circa {p} di vincere e costa poco ({c}): vedi e guarda.",
       fold: "Circa {p} di vincere, ma vedere {c} su un piatto di {pot} richiede il {need}: lascia.",
+      bluff: "Circa {p} di vincere contro {o}: poco, ma una piccola puntata ogni tanto confonde gli avversari (bluff).",
+      stubborn: "Circa {p} di vincere: non basterebbe, ma vedere costa poco ({c}) – una chiamata ostinata.",
       made: "{h} – mano fatta: tieni tutte e cinque le carte (servito).",
       trips: "Tieni il tris di {r} e cambia le altre due.",
       twopair: "Tieni le due coppie e cambia la carta spaiata: 1 possibilità su 11 di fare full.",
@@ -207,10 +219,13 @@
   let amount = 0;                // raise amount chosen with the slider
   let panelKey = "";
   let showLast = false;          // the "Last hand" box is open
+  let showLog = true;            // the moves of this hand are listed
 
   function resize(api) {
     const upright = window.innerWidth < 700 && window.innerHeight > window.innerWidth;
-    const { w: availW, h: availH } = api.space(1100, 150);
+    let { w: availW, h: availH } = api.space(1100, 150);
+    const panel = api.$("gamePanel"), fixed = parseInt(panel.style.minHeight) || 0;
+    if (fixed && panel.offsetHeight > fixed) availH += panel.offsetHeight - fixed;   // a longer panel just scrolls
     L = upright || availW / Math.max(1, availH) < 0.95 ? TALL : WIDE;
     const ratio = L.W / L.H;
     const w = upright ? Math.max(260, Math.floor(availW))                    // full width, the page scrolls
@@ -449,7 +464,11 @@
     // bet in front of the seat
     if (s.bet && !gone) {
       if (mine) chipStack(ctx, L.cx + (s.n * (L.big[0] + 8)) / 2 + 22, L.myY + 30, s.bet);
-      else chipStack(ctx, p.x + ux * (128 + Math.abs(ux) * 60) - 10, p.y + uy * 118, s.bet);
+      else if (L === TALL) {        // tall table: chips just inside the name plate, clear of the pot
+        const side = p.x < L.cx - 20 ? 1 : p.x > L.cx + 20 ? -1 : 0;
+        if (side) chipStack(ctx, p.x + side * (L.pw / 2 + 18) - (side < 0 ? 40 : 0), p.y + L.ph / 2 + 4, s.bet);
+        else chipStack(ctx, p.x + L.pw / 2 + 14, p.y, s.bet);
+      } else chipStack(ctx, p.x + ux * (128 + Math.abs(ux) * 95) - 10, p.y + uy * 118, s.bet);
     }
 
     // name plate: name / chips / last action (or hand at the showdown)
@@ -469,11 +488,14 @@
     const nm = (mine ? t("you") : s.name) + (s.bot ? " 🤖" : "");
     text(ctx, nm.length > 13 ? nm.slice(0, 12) + "…" : nm, X + 24, Y + lh * 0.95, 15, "#f1f5f9", 700, "left");
     text(ctx, gone ? (s.left ? t("left") : t("out")) : fmt(s.chips), X + 12, Y + lh * 2.05, 15, "#fde68a", 800, "left");
-    const act = s.waiting ? t("joins") : s.allin && !(s.act && (s.act[0] === "allin" || s.act[0] === "hand")) ? t("allinTag") : actName(s.act);
-    const maxc = L === TALL ? 19 : 24;
-    if (act) text(ctx, act.length > maxc ? act.slice(0, maxc - 1) + "…" : act, X + 12, Y + lh * 3.0, 12,
-                  isWinner ? "#facc15" : "#94a3b8", 600, "left");
+    if (s.waiting) text(ctx, t("joins"), X + 12, Y + lh * 3.0, 12, "#94a3b8", 600, "left");
+    else if (s.total && !gone) text(ctx, t("inPot", { n: fmt(s.total) }), X + 12, Y + lh * 3.0, 12, "#94a3b8", 600, "left");
     ctx.restore();
+
+    // what they did last: a coloured badge on top of the name plate (dashed: a computer move about to happen)
+    const pend = g.pending && g.pending.seat === j ? g.pending.act : null;
+    const shown = pend || (s.allin && !(s.act && (s.act[0] === "allin" || s.act[0] === "hand")) ? ["allin", s.total] : s.act);
+    if (shown && !gone) badge(ctx, shown, X + 4, Y, pw * 0.86, !!pend, isWinner);
 
     // whose turn: a shrinking bar under the plate
     if (turn && g.turn_left != null && g.timer) {
@@ -498,6 +520,24 @@
     if (isWinner && s.won) text(ctx, `+${fmt(s.won)}`, p.x, Y - 12 * L.fs, 18, "#facc15", 900);
   }
 
+  const BADGE = { sb: "#475569", bb: "#475569", fold: "#4b5563", check: "#15803d", call: "#1d4ed8", bet: "#c2410c",
+                  raise: "#c2410c", allin: "#b91c1c", draw: "#6d28d9", pat: "#6d28d9", left: "#4b5563", hand: "#a16207" };
+  function badge(ctx, a, x, y, maxW, pending, win) {
+    let s = (pending ? "→ " : "") + actName(a);
+    const fs = 13 * L.fs * k;
+    ctx.save();
+    ctx.font = `800 ${Math.max(9, fs)}px system-ui, sans-serif`;
+    while (ctx.measureText(s).width > (maxW - 14) * k && s.length > 4) s = s.slice(0, -2) + "…";
+    const w = ctx.measureText(s).width / k + 14, h = 21 * L.fs;
+    rrect(ctx, x * k, (y - h * 0.62) * k, w * k, h * k, 9 * k);
+    ctx.fillStyle = win && a[0] === "hand" ? "#ca8a04" : (BADGE[a[0]] || "#334155");
+    ctx.fill();
+    if (pending) { ctx.setLineDash([4 * k, 3 * k]); ctx.strokeStyle = "#fde68a"; ctx.lineWidth = Math.max(1.5, 2 * k); ctx.stroke(); }
+    ctx.fillStyle = "#fff"; ctx.textAlign = "left"; ctx.textBaseline = "middle";
+    ctx.fillText(s, (x + 7) * k, (y - h * 0.62 + h / 2) * k);
+    ctx.restore();
+  }
+
   // ================================================================== the panel (HTML)
   const btn = (act, txt, cls = "", extra = "") => `<button data-act="${act}" class="${cls}" ${extra}>${txt}</button>`;
   const kbd = s => ` <small>${s}</small>`;
@@ -505,6 +545,19 @@
   function miniCards(list, bestSet, winner) {
     return `<span class="pk-cards">${(list || []).map(c =>
       `<span class="pkc${red(c) ? " r" : ""}${bestSet && !bestSet.has(c) ? " off" : ""}${winner && bestSet && bestSet.has(c) ? " w" : ""}">${label(c)}${SUIT[suitOf(c)]}</span>`).join("")}</span>`;
+  }
+
+  // every move of this hand, grouped by betting round
+  function historyHtml(api, g) {
+    const st = TX[LANG].stages;
+    const stageName = s => s === "draw" ? st.drawStage : (g.variant === "holdem" ? st.holdem[s] : st.draw[s]) || "";
+    const groups = [];
+    for (const [seat, stage, a] of g.log) {
+      if (!groups.length || groups[groups.length - 1].stage !== stage) groups.push({ stage, items: [] });
+      const who = seat === g.me ? t("you") : api.esc(g.seats[seat].name);
+      groups[groups.length - 1].items.push(`<span class="pk-mv"><i style="background:${BADGE[a[0]] || "#334155"}"></i>${who}: ${actName(a)}</span>`);
+    }
+    return groups.map(gr => `<div><b>${stageName(gr.stage)}</b> ${gr.items.join(" ")}</div>`).join("");
   }
 
   // the summary of a finished hand: who won what, with which hand, and why; every hand shown, best first
@@ -561,6 +614,10 @@
     .pkc.r { color: #dc2626; } .pkc.off { opacity: .35; } .pkc.w { border-color: #facc15; box-shadow: 0 0 0 1px #facc15; }
     .pk-next { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
     .pk-next button { flex: 1 1 auto; padding: 10px; font-size: 15px; }
+    .pk-log { font-size: 12.5px; line-height: 1.7; background: rgba(255,255,255,.04); border-radius: 8px; padding: 6px 8px; }
+    .pk-log b { color: var(--muted); font-weight: 700; margin-right: 4px; }
+    .pk-mv { white-space: nowrap; margin-right: 8px; } .pk-mv i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 4px; }
+    .pk-pend { border-left-color: #facc15; background: rgba(250, 204, 21, .10); }
     .pk-link { background: none; border: 0; color: var(--muted); text-decoration: underline; padding: 2px 0; font-size: 13px; align-self: flex-start; }
     body.landscape #gamePanel { padding-top: 92px; }
     @media (max-width: 600px) { .pk-shown td:first-child { display: none; } }
@@ -585,7 +642,7 @@
 
     const key = JSON.stringify([LANG, g.phase, g.to_act, g.hand, o, g.advice, myTurn && g.phase === "draw" ? [...sel] : 0,
                                 g.cap, g.raises, g.pot, mySeat && mySeat.chips, g.seats.map(s => s.act), g.ready, showLast,
-                                g.phase === "showdown" ? g.result : 0]);
+                                g.phase === "showdown" ? g.result : 0, g.pending, g.log && g.log.length, showLog]);
     const timeLeft = g.phase === "showdown" ? (g.pause ? ` · ${t("nextIn", { n: g.pause_left })}` : "")
                    : g.turn_left != null ? ` · ${g.turn_left}s` : "";
     if (key === panelKey) {
@@ -594,7 +651,8 @@
     }
     panelKey = key;
 
-    const info = `${t("blinds")} ${g.sb}/${g.bb} · ${t("raises")} ${g.raises}/${g.cap || "∞"}${g.pot ? " · " + t("potN", { n: fmt(g.pot) }) : ""}`;
+    const deckInfo = g.deck === "short" ? " · " + t("deckShort", { lo: RANK[g.lo] || g.lo, n: (15 - g.lo) * 4 }) : "";
+    const info = `${t("blinds")} ${g.sb}/${g.bb} · ${t("raises")} ${g.raises}/${g.cap || "∞"}${g.pot ? " · " + t("potN", { n: fmt(g.pot) }) : ""}${deckInfo}`;
     let head = "", body = "";
     const who = g.to_act != null ? g.seats[g.to_act] : null;
 
@@ -614,6 +672,15 @@
       else if (g.phase === "runout") head = t("runout");
       else if (mySeat && mySeat.waiting) head = t("joinNext");
       if (mySeat && mySeat.out) head = t("outChips");
+
+      // step by step: the computer's next move, waiting for Continue
+      if (g.pending) {
+        const ps = g.seats[g.pending.seat];
+        head = t("willDo", { name: ps.name, act: actName(g.pending.act) });
+        const why = whyText(g.pending.why);
+        body += `<div class="pk-adv pk-pend">${why ? `<div><b>${t("reasoning")}</b> ${api.esc(why)}</div>` : ""}
+          <div class="pk-row">${btn("continue", `${t("cont")} ▶${kbd("Enter")}`, "primary")}</div></div>`;
+      }
 
       if (myTurn && g.phase === "betting" && o) {
         const callTxt = o.to_call ? (o.call < o.to_call ? t("allinN", { n: fmt(mySeat.bet + o.call) }) : t("call", { n: fmt(o.to_call) })) : t("check");
@@ -647,6 +714,12 @@
           ${a.improve != null ? `<div>${t("improve", { p: pct(a.improve) })}</div>` : ""}
           ${myTurn && (a.suggest || a.discard) ? `<div class="pk-row">${btn("follow", t("follow") + kbd("H"))}</div>` : ""}
         </div>`;
+      }
+
+      // the moves of this hand, round by round
+      if (g.log && g.log.length) {
+        body += `<button class="pk-link" data-act="log">${showLog ? t("hideHistory") : t("showHistory")}</button>`;
+        if (showLog) body += `<div class="pk-log">${historyHtml(api, g)}</div>`;
       }
 
       // the previous hand, to look at again
@@ -698,6 +771,8 @@
   function act(api, what) {
     const g = api.st().game, o = g.options;
     if (what === "last") { showLast = !showLast; render(api); return true; }
+    if (what === "log") { showLog = !showLog; render(api); return true; }
+    if (what === "continue") { if (g.pending) api.input({ action: "continue" }); return true; }
     if (what === "ready") { if (g.phase === "showdown") api.input({ action: "ready" }); return true; }
     if (g.to_act !== g.me || g.me == null) return false;
     if (g.phase === "draw") {
@@ -734,6 +809,7 @@
       if (k2 === "n" || key === "Enter" || key === " ") return act(api, "ready");
       return false;
     }
+    if (g.pending && (key === "Enter" || key === " " || k2 === "n")) return act(api, "continue");
     if (g.to_act !== g.me) return false;
     if (g.phase === "draw") {
       if (/^[1-5]$/.test(k2)) { toggle(api, +k2 - 1); return true; }
@@ -824,9 +900,11 @@
   const EXAMPLES = ["As Ks Qs Js 10s", "9h 8h 7h 6h 5h", "Kc Kd Kh Ks 2d", "Qs Qd Qh 3c 3d", "Ah 9h 7h 4h 2h",
                     "10d 9c 8s 7h 6d", "7s 7d 7c Kh 2h", "Js Jd 4c 4h Ah", "6s 6d Kc 9h 2h", "As Jd 8c 6h 2h"];
   const ODDS = ["649,740", "72,193", "4,165", "694", "509", "255", "47", "21", "2.4", "2"];
-  function rankTable(rows, oddsWord) {
-    return `<table class="pk-rank">${rows.map((r, i) => `<tr><td>${i + 1}</td><td><b>${r[0]}</b><br>${r[1]}</td>
-      <td>${cardsHtml(EXAMPLES[i])}</td><td class="odds">${oddsWord.replace("{n}", LANG === "it" ? ODDS[i].replace(",", ".").replace(/\.(\d)$/, ",$1") : ODDS[i])}</td></tr>`).join("")}</table>`;
+  function rankTable(rows, oddsWord, short) {
+    let order = rows.map((r, i) => [r, i]);
+    if (short) { const f = order[4]; order[4] = order[3]; order[3] = f; }       // Italian deck: flush above full house
+    return `<table class="pk-rank">${order.map(([r, i], n) => `<tr><td>${n + 1}</td><td><b>${r[0]}</b><br>${r[1]}</td>
+      <td>${cardsHtml(EXAMPLES[i])}</td><td class="odds">${short ? "" : oddsWord.replace("{n}", LANG === "it" ? ODDS[i].replace(",", ".").replace(/\.(\d)$/, ",$1") : ODDS[i])}</td></tr>`).join("")}</table>`;
   }
 
   function manualEn(settings) {
@@ -865,8 +943,14 @@
         ["Two pair", "Two different pairs."],
         ["One pair", "Two cards of the same rank."],
         ["High card", "None of the above: your highest card counts."],
-      ], "1 in {n}")}
-      <p style="font-size:12px;color:var(--muted)">Right-hand column: how often five random cards make that hand.</p>
+      ], "1 in {n}", settings.deck === "short")}
+      <p style="font-size:12px;color:var(--muted)">${settings.deck === "short" ? "This room plays the Italian short deck: see below." : "Right-hand column: how often five random cards make that hand (52 cards)."}</p>
+      <h3>The Italian deck (short)</h3>
+      <p>${settings.deck === "short" ? "<b>This room uses it.</b> " : "Optional, in the room settings (Deck). "}The lowest card is <b>11 minus the number of players</b>: with 4 players the deck goes from the 7 to the Ace (32 cards), with 5 from the 6, with 6 from the 5, with 3 from the 8, with 2 from the 9. With fewer cards some hands change value:</p>
+      <ul>
+        <li><b>A flush beats a full house</b> – in the short deck flushes are rarer.</li>
+        <li>The Ace also closes the <b>lowest straight</b> with the lowest cards: with 4 players A-7-8-9-10.</li>
+      </ul>
       <h3>Ties</h3>
       <ul>
         <li>Same kind of hand: the higher cards win – a pair of Kings beats a pair of Queens; a flush with an Ace beats a flush with a King.</li>
@@ -909,6 +993,7 @@
         <li><b>Buttons</b> under the table (beside it on a sideways phone). Drag the slider or use Min / ½ pot / Pot / All-in to choose a bet.</li>
         <li><b>Keyboard:</b> F fold · C or Space check/call · R bet/raise · A all-in · ↑ ↓ change the amount · H follow the advice · N next hand · in draw: 1–5 pick cards, Enter to change · Esc to leave.</li>
         <li><b>Draw:</b> tap or click your cards to mark the ones to change.</li>
+        <li><b>Step by step</b> (room setting, playing alone): each computer move is announced – with its reasoning in Advice and Demo – and waits for <b>Continue</b> (Enter).</li>
         <li><b>Language:</b> English or Italiano, in the room screen (each player chooses their own).</li>
       </ul>`;
   }
@@ -949,8 +1034,14 @@
         ["Doppia coppia", "Due coppie diverse."],
         ["Coppia", "Due carte dello stesso valore."],
         ["Carta alta", "Niente di tutto ciò: conta la carta più alta."],
-      ], "1 su {n}")}
-      <p style="font-size:12px;color:var(--muted)">Colonna a destra: quanto spesso cinque carte a caso formano quella mano.</p>
+      ], "1 su {n}", settings.deck === "short")}
+      <p style="font-size:12px;color:var(--muted)">${settings.deck === "short" ? "Questa stanza gioca con il mazzo corto all'italiana: vedi sotto." : "Colonna a destra: quanto spesso cinque carte a caso formano quella mano (52 carte)."}</p>
+      <h3>Il mazzo all'italiana (corto)</h3>
+      <p>${settings.deck === "short" ? "<b>Questa stanza lo usa.</b> " : "Facoltativo, nelle impostazioni della stanza (Mazzo). "}La carta più bassa è <b>11 meno il numero di giocatori</b>: in 4 si gioca dal 7 all'Asso (32 carte), in 5 dal 6, in 6 dal 5, in 3 dall'8, in 2 dal 9. Con meno carte alcune mani cambiano valore:</p>
+      <ul>
+        <li><b>Il colore batte il full</b> – con il mazzo corto il colore è più raro.</li>
+        <li>L'Asso chiude anche la <b>scala più bassa</b> con le carte più basse: in 4 giocatori A-7-8-9-10.</li>
+      </ul>
       <h3>Parità</h3>
       <ul>
         <li>Stesso tipo di mano: vincono le carte più alte – una coppia di Re batte una coppia di Donne; un colore con l'Asso batte un colore con il Re.</li>
@@ -994,6 +1085,7 @@
         <li><b>Pulsanti</b> sotto il tavolo (di fianco sul telefono girato). Trascina il cursore o usa Min / ½ piatto / Piatto / All-in per scegliere la puntata.</li>
         <li><b>Tastiera:</b> F lascia · C o Spazio bussa/vedi · R punta/rilancia · A all-in · ↑ ↓ cambia l'importo · H segui il consiglio · N prossima mano · nel classico: 1–5 scegli le carte, Invio per cambiare · Esc per uscire.</li>
         <li><b>Cambio:</b> tocca o clicca le tue carte per segnare quelle da cambiare.</li>
+        <li><b>Passo passo</b> (impostazione della stanza, giocando da solo): ogni mossa del computer viene annunciata – con il ragionamento in Consigli e Demo – e aspetta <b>Continua</b> (Invio).</li>
         <li><b>Lingua:</b> English o Italiano, nella schermata della stanza (ogni giocatore sceglie la sua).</li>
       </ul>`;
   }

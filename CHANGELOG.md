@@ -3,6 +3,13 @@
 The version is in the `VERSION` file and shows on the home screen (bottom), next to the commit it was built from.
 Bump it with every change pushed: the last number for fixes, the middle one for new features or games.
 
+## 1.3.0 – 2026-11-08
+Poker: a coloured badge beside every player with their last move (fold, check, call, raise, all-in, change N),
+"in pot" on each name plate and the list of this hand's moves round by round. New room settings: Deck –
+52 cards or Italian short deck (lowest card = 11 − players; flush beats full house; A-7-8-9-10 straight with
+4 players) – and Computer moves – automatic or step by step (each computer move announced, with its
+reasoning in Advice/Demo, waiting for Continue). Manual updated in both languages.
+
 ## 1.2.0 – 2026-11-08
 Poker in English or Italian: each player picks their language in the room (table, buttons, advice, hand
 names, results, room settings and the manual). After each hand the result stays on screen (host setting
